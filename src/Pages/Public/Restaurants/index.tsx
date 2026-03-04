@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import PublicNavbar from "../../../Components/Public/PublicNavbar";
 import Loader from "../../../Components/loader";
 import Placeholder from "../../../Components/placeholder";
@@ -8,17 +9,36 @@ import FiltersBar from "./FiltersBar";
 import RestaurantGrid from "./RestaurantGrid";
 import FeaturedAreas from "./FeaturedAreas";
 import Pagination from "./Pagination";
+
+type FavoriteRestaurant = { id: string; name: string; cuisine: string };
+
 const Restaurants = () => {
+  const navigate = useNavigate();
+  const isAuthenticated = localStorage.getItem("isAuthenticated") === "true";
   const [data, setData] = useState<RestaurantsData>({
       filters: [],
       restaurants: [],
       featuredAreas: []
   });
   const [activeFilter, setActiveFilter] = useState<string>("All");
-  const [searchTerm, setSearchTerm] = useState<string>("");
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 12;
   const [loading, setLoading] = useState(true);
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+
+  const getFavorites = (): FavoriteRestaurant[] => {
+    try {
+      const stored = localStorage.getItem("favorite_restaurants");
+      return stored ? (JSON.parse(stored) as FavoriteRestaurant[]) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  useEffect(() => {
+    const ids = new Set(getFavorites().map((item) => item.id));
+    setFavoriteIds(ids);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -49,20 +69,7 @@ const Restaurants = () => {
     );
   };
 
-  const matchesSearch = (item: RestaurantsData["restaurants"][number]) => {
-    const term = searchTerm.trim().toLowerCase();
-    if (!term) return true;
-    return (
-      item.name.toLowerCase().includes(term) ||
-      item.cuisine.toLowerCase().includes(term) ||
-      item.location.toLowerCase().includes(term) ||
-      item.tags.some((tag) => tag.toLowerCase().includes(term))
-    );
-  };
-
-  const filteredRestaurants = data.restaurants.filter(
-    (item) => matchesFilter(item) && matchesSearch(item)
-  );
+  const filteredRestaurants = data.restaurants.filter((item) => matchesFilter(item));
   
   const totalPages = Math.max(1, Math.ceil(filteredRestaurants.length / pageSize));
   const safePage = Math.min(currentPage, totalPages);
@@ -81,17 +88,29 @@ const Restaurants = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeFilter, searchTerm]);
+  }, [activeFilter]);
+
+  const handleToggleFavorite = (restaurant: RestaurantsData["restaurants"][number]) => {
+    if (!isAuthenticated) {
+      navigate("/login");
+      return;
+    }
+
+    const favorites = getFavorites();
+    const exists = favorites.some((item) => item.id === restaurant.id);
+    const next = exists
+      ? favorites.filter((item) => item.id !== restaurant.id)
+      : [...favorites, { id: restaurant.id, name: restaurant.name, cuisine: restaurant.cuisine }];
+
+    localStorage.setItem("favorite_restaurants", JSON.stringify(next));
+    setFavoriteIds(new Set(next.map((item) => item.id)));
+  };
 
   return (
     <div className="min-h-screen bg-slate-100">
-      <div className="w-full max-w-none px-10 py-8 space-y-8">
+      <div className="w-full max-w-none space-y-6 px-4 py-6 sm:px-6 sm:py-8 lg:px-10">
         <PublicNavbar />
-        <HeaderSearch
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
-          loading={loading}
-        />
+        <HeaderSearch />
 
         <FiltersBar
           filters={data.filters}
@@ -103,6 +122,8 @@ const Restaurants = () => {
         <RestaurantGrid
           restaurants={visibleRestaurants}
           loading={loading}
+          favoriteIds={favoriteIds}
+          onToggleFavorite={handleToggleFavorite}
         />
 
         {!loading && filteredRestaurants.length > pageSize ? (

@@ -18,12 +18,20 @@ type ReservationModalProps = {
   selectedSlotId?: string | null;
   selectedTableId?: string | null;
   selectedMethodId?: string | null;
+  reservationDate: string;
+  guestCount: number;
+  specialRequest: string;
+  onReservationDateChange: (value: string) => void;
+  onGuestCountChange: (value: number) => void;
+  onSpecialRequestChange: (value: string) => void;
+  canProceed: boolean;
   summaryItems: SummaryItem[];
   onSelectSlot: (slot: Slot) => void;
   onSelectTable: (table: TableOption) => void;
   onSelectMethod: (method: PaymentMethod) => void;
   onClose: () => void;
   onBack: () => void;
+  onNext: () => void;
   onReset: () => void;
   onConfirm: () => void;
 };
@@ -39,12 +47,20 @@ const ReservationModal = ({
   selectedSlotId,
   selectedTableId,
   selectedMethodId,
+  reservationDate,
+  guestCount,
+  specialRequest,
+  onReservationDateChange,
+  onGuestCountChange,
+  onSpecialRequestChange,
+  canProceed,
   summaryItems,
   onSelectSlot,
   onSelectTable,
   onSelectMethod,
   onClose,
   onBack,
+  onNext,
   onReset,
   onConfirm,
 }: ReservationModalProps) => {
@@ -95,26 +111,69 @@ const ReservationModal = ({
           ) : (
             <>
               {step === "slot" ? (
-                <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {(slots ?? []).map((slot) => (
-                    <button
-                      key={slot.id}
-                      disabled={slot.status === "Full"}
-                      onClick={() => onSelectSlot(slot)}
-                      className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold ${
-                        slot.status === "Full"
-                          ? "border-slate-100 bg-slate-50 text-slate-400"
-                          : selectedSlotId === slot.id
-                          ? "border-slate-900 bg-slate-900 text-white"
-                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                      }`}
-                    >
-                      <div>{slot.label}</div>
-                      <div className="mt-1 text-xs font-medium text-slate-400">
-                        {slot.status}
-                      </div>
-                    </button>
-                  ))}
+                <div className="mt-6 space-y-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-500">
+                        Reservation date
+                      </label>
+                      <input
+                        type="date"
+                        value={reservationDate}
+                        onChange={(event) => onReservationDateChange(event.target.value)}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-slate-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-500">
+                        Guests
+                      </label>
+                      <select
+                        value={guestCount}
+                        onChange={(event) => onGuestCountChange(Number(event.target.value))}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-slate-400"
+                      >
+                        {Array.from({ length: 10 }, (_, i) => i + 1).map((count) => (
+                          <option key={count} value={count}>
+                            {count} {count === 1 ? "guest" : "guests"}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-500">
+                      Special request (optional)
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={specialRequest}
+                      onChange={(event) => onSpecialRequestChange(event.target.value)}
+                      placeholder="Allergies, window seat, occasion..."
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-slate-400"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {(slots ?? []).map((slot) => (
+                      <button
+                        key={slot.id}
+                        disabled={slot.status === "Full"}
+                        onClick={() => onSelectSlot(slot)}
+                        className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold ${
+                          slot.status === "Full"
+                            ? "border-slate-100 bg-slate-50 text-slate-400"
+                            : selectedSlotId === slot.id
+                            ? "border-slate-900 bg-slate-900 text-white"
+                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div>{slot.label}</div>
+                        <div className="mt-1 text-xs font-medium text-slate-400">
+                          {slot.status}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : null}
 
@@ -172,12 +231,6 @@ const ReservationModal = ({
                       ))}
                     </div>
                   </div>
-                  <button
-                    className="w-full rounded-full bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
-                    onClick={onConfirm}
-                  >
-                    Confirm booking
-                  </button>
                 </div>
               ) : null}
             </>
@@ -192,9 +245,31 @@ const ReservationModal = ({
           >
             Back
           </button>
-          <button className="text-slate-500 hover:text-slate-700" onClick={onReset}>
-            Reset
-          </button>
+          <div className="flex items-center gap-3">
+            <button className="text-slate-500 hover:text-slate-700" onClick={onReset}>
+              Reset
+            </button>
+            {step === "confirm" ? (
+              <button
+                className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
+                onClick={onConfirm}
+              >
+                Confirm booking
+              </button>
+            ) : (
+              <button
+                className={`rounded-full px-4 py-2 text-xs font-semibold ${
+                  canProceed
+                    ? "bg-slate-900 text-white"
+                    : "cursor-not-allowed bg-slate-200 text-slate-500"
+                }`}
+                onClick={onNext}
+                disabled={!canProceed}
+              >
+                Continue
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

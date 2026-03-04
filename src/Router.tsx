@@ -10,6 +10,7 @@ const FloorManagment = lazy(() => import("./Pages/Admin/FloorManagment/index"));
 const GuestCRM = lazy(() => import("./Pages/Admin/Guest CRM/index"));
 const Payment = lazy(() => import("./Pages/Admin/Payment/index"));
 const Reservation = lazy(() => import("./Pages/Admin/Reservation/index"));
+const Orders = lazy(() => import("./Pages/Admin/Orders/index"));
 const Settings = lazy(() => import("./Pages/Admin/Settings/index"));
 const StaffManagment = lazy(() => import("./Pages/Admin/StaffManagment/index"));
 const StaffProfile = lazy(() => import("./Pages/Admin/StaffManagment"));
@@ -21,7 +22,10 @@ const BecomeSeller = lazy(() => import("./Pages/Auth/BecomeSeller"));
 const ForgotPassword = lazy(() => import("./Pages/Auth/ForgotPassword"));
 const Landing = lazy(() => import("./Pages/Public/Landing"));
 const Restaurants = lazy(() => import("./Pages/Public/Restaurants"));
+const RestaurantSearch = lazy(() => import("./Pages/Public/RestaurantSearch"));
 const RestaurantDetail = lazy(() => import("./Pages/Public/RestaurantDetail"));
+const RestaurantMenu = lazy(() => import("./Pages/Public/RestaurantMenu"));
+const CartPage = lazy(() => import("./Pages/Public/Cart"));
 const GuestProfile = lazy(() => import("./Pages/Public/GuestProfile"));
 const SuperAdminLayout = lazy(() => import("./Layouts/SuperAdminLayout"));
 const SuperAdminDashboard = lazy(() => import("./Pages/SuperAdmin/Dashboard"));
@@ -71,6 +75,10 @@ export const Router = createBrowserRouter([
           {
             path: "reservation",
             element: <Reservation />,
+          },
+          {
+            path: "orders",
+            element: <Orders />,
           },
           {
             path: "payment",
@@ -176,8 +184,20 @@ export const Router = createBrowserRouter([
     element: <Restaurants />,
   },
   {
+    path: "/restaurant-search",
+    element: <RestaurantSearch />,
+  },
+  {
+    path: "/cart",
+    element: <CartPage />,
+  },
+  {
     path: "/restaurants/:id",
     element: <RestaurantDetail />,
+  },
+  {
+    path: "/restaurants/:id/menu",
+    element: <RestaurantMenu />,
   },
   {
     path: "/guest-profile",

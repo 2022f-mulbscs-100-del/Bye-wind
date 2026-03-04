@@ -68,7 +68,11 @@ const RestaurantDetail = () => {
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [selectedTable, setSelectedTable] = useState<TableOption | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
+  const [reservationDate, setReservationDate] = useState("");
+  const [guestCount, setGuestCount] = useState(2);
+  const [specialRequest, setSpecialRequest] = useState("");
   const [reservationLoading, setReservationLoading] = useState(false);
+  const [reservationSuccess, setReservationSuccess] = useState("");
   const [isFavorite, setIsFavorite] = useState(false);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
@@ -176,13 +180,23 @@ const RestaurantDetail = () => {
 
   const summaryItems = useMemo(
     () => [
+      { label: "Date", value: reservationDate || "-" },
+      { label: "Guests", value: String(guestCount) },
       { label: "Time", value: selectedSlot?.label ?? "-" },
       { label: "Table", value: selectedTable?.label ?? "-" },
       { label: "Zone", value: selectedTable?.zone ?? "-" },
       { label: "Payment", value: selectedMethod?.label ?? "-" },
+      { label: "Request", value: specialRequest.trim() || "-" },
     ],
-    [selectedSlot, selectedTable, selectedMethod]
+    [reservationDate, guestCount, selectedSlot, selectedTable, selectedMethod, specialRequest]
   );
+
+  const canProceed = useMemo(() => {
+    if (step === "slot") return Boolean(reservationDate && selectedSlot);
+    if (step === "table") return Boolean(selectedTable);
+    if (step === "payment") return Boolean(selectedMethod);
+    return true;
+  }, [step, reservationDate, selectedSlot, selectedTable, selectedMethod]);
 
   const getFavorites = () => {
     try {
@@ -226,6 +240,9 @@ const RestaurantDetail = () => {
     setSelectedSlot(null);
     setSelectedTable(null);
     setSelectedMethod(null);
+    setReservationDate("");
+    setGuestCount(2);
+    setSpecialRequest("");
   };
 
   const handleFavoriteToggle = () => {
@@ -274,6 +291,39 @@ const RestaurantDetail = () => {
     }
   };
 
+  const handleReservationConfirm = () => {
+    if (!restaurant || !selectedSlot || !selectedTable || !selectedMethod || !reservationDate) {
+      return;
+    }
+
+    const reference = `BW-${Date.now().toString().slice(-6)}`;
+    try {
+      const stored = localStorage.getItem("guest_bookings");
+      const existing = stored ? (JSON.parse(stored) as unknown[]) : [];
+      const nextBooking = {
+        id: `booking-${Date.now()}`,
+        restaurantName: restaurant.name,
+        date: reservationDate,
+        time: selectedSlot.label,
+        guests: guestCount,
+        status: "confirmed" as const,
+        table: selectedTable.label,
+        paymentStatus: selectedMethod.id === "pay-later" ? "pay_later" : "paid",
+        paymentMethod: selectedMethod.label,
+        amount: 0,
+        reference,
+        specialRequest: specialRequest.trim(),
+      };
+      localStorage.setItem("guest_bookings", JSON.stringify([nextBooking, ...existing]));
+      setReservationSuccess(`Booking confirmed. Reference: ${reference}`);
+    } catch {
+      setReservationSuccess("Booking confirmed.");
+    }
+
+    setIsReservationOpen(false);
+    resetReservation();
+  };
+
   const handlePrevImage = () => {
     if (galleryImages.length === 0) return;
     setCurrentImageIndex((prev) =>
@@ -310,7 +360,16 @@ const RestaurantDetail = () => {
           onSelect={setCurrentImageIndex}
         />
 
-        <RestaurantInfoCard restaurant={restaurant} />
+        <RestaurantInfoCard
+          restaurant={restaurant}
+          onWriteReview={() => {
+            if (!isAuthenticated) {
+              navigate("/login");
+              return;
+            }
+            setIsReviewOpen(true);
+          }}
+        />
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
           <FloorOverviewCard highlights={floorHighlights} tables={floorTables} />
@@ -342,7 +401,29 @@ const RestaurantDetail = () => {
               onLogin={() => navigate("/login")}
             />
           </div>
+          <div className="xl:col-span-full rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Full menu</div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Browse all dishes and pricing in a dedicated menu view.
+                </p>
+              </div>
+              <Link
+                to={`/restaurants/${restaurant.id}/menu`}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                View full menu
+              </Link>
+            </div>
+          </div>
         </div>
+
+        {reservationSuccess ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+            {reservationSuccess}
+          </div>
+        ) : null}
 
         <ReviewsSection reviews={restaurant.reviews ?? []} />
       </div>
@@ -358,18 +439,27 @@ const RestaurantDetail = () => {
         selectedSlotId={selectedSlot?.id}
         selectedTableId={selectedTable?.id}
         selectedMethodId={selectedMethod?.id}
+        reservationDate={reservationDate}
+        guestCount={guestCount}
+        specialRequest={specialRequest}
+        onReservationDateChange={setReservationDate}
+        onGuestCountChange={setGuestCount}
+        onSpecialRequestChange={setSpecialRequest}
+        canProceed={canProceed}
         summaryItems={summaryItems}
         onSelectSlot={(slot) => {
           setSelectedSlot(slot);
-          setStep("table");
         }}
         onSelectTable={(table) => {
           setSelectedTable(table);
-          setStep("payment");
         }}
         onSelectMethod={(method) => {
           setSelectedMethod(method);
-          setStep("confirm");
+        }}
+        onNext={() => {
+          if (step === "slot") setStep("table");
+          else if (step === "table") setStep("payment");
+          else if (step === "payment") setStep("confirm");
         }}
         onClose={() => setIsReservationOpen(false)}
         onBack={() => {
@@ -378,7 +468,7 @@ const RestaurantDetail = () => {
           else if (step === "confirm") setStep("payment");
         }}
         onReset={resetReservation}
-        onConfirm={() => setIsReservationOpen(false)}
+        onConfirm={handleReservationConfirm}
       />
 
       <ReviewModal

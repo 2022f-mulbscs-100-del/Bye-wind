@@ -1,14 +1,21 @@
 import { Link } from "react-router-dom";
-import { FiClock, FiMapPin, FiStar, FiTag } from "react-icons/fi";
+import { FiClock, FiHeart, FiMapPin, FiStar, FiTag } from "react-icons/fi";
 import type { Restaurant } from "./types";
 import Placeholder from "@/Components/placeholder";
 
 type RestaurantGridProps = {
   restaurants: Restaurant[];
   loading: boolean;
+  favoriteIds: Set<string>;
+  onToggleFavorite: (restaurant: Restaurant) => void;
 };
 
-const RestaurantGrid = ({ restaurants, loading }: RestaurantGridProps) => {
+const RestaurantGrid = ({
+  restaurants,
+  loading,
+  favoriteIds,
+  onToggleFavorite,
+}: RestaurantGridProps) => {
   return (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {loading ? (
@@ -71,15 +78,26 @@ const RestaurantGrid = ({ restaurants, loading }: RestaurantGridProps) => {
                   </span>
                 ))}
               </div>
-              <div className="mt-4 flex items-center justify-between">
+              <div className="mt-4 flex flex-wrap items-center gap-2">
                 <Link
                   to={`/restaurants/${item.id}`}
-                  className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
+                  className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
                 >
                   View details
                 </Link>
-                <button className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600">
+                <button className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600">
                   Book now
+                </button>
+                <button
+                  onClick={() => onToggleFavorite(item)}
+                  className={`inline-flex items-center justify-center gap-1 rounded-full border px-4 py-2 text-xs font-semibold ${
+                    favoriteIds.has(item.id)
+                      ? "border-rose-200 bg-rose-50 text-rose-700"
+                      : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  <FiHeart />
+                  {favoriteIds.has(item.id) ? "Saved" : "Favorite"}
                 </button>
               </div>
             </div>

@@ -1,13 +1,24 @@
-import { CiDark } from "react-icons/ci";
-import { FiBell, FiSearch } from "react-icons/fi";
-import { useTheme } from "../../context/ThemeContext";
+import { FiBell, FiMenu, FiSearch } from "react-icons/fi";
 
-const Navbar = () => {
-  const { isDark, toggleTheme } = useTheme();
+type NavbarProps = {
+  showMenuButton?: boolean;
+  onMenuClick?: () => void;
+};
 
+const Navbar = ({ showMenuButton = false, onMenuClick }: NavbarProps) => {
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
       <div className="flex w-full items-center gap-3 sm:w-auto">
+        {showMenuButton && (
+          <button
+            type="button"
+            onClick={onMenuClick}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm"
+            aria-label="Open Sidebar"
+          >
+            <FiMenu />
+          </button>
+        )}
         <div className="hidden text-sm font-medium text-slate-500 md:block">Admin Panel</div>
         <div className="relative flex-1 sm:flex-none">
           <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -19,18 +30,6 @@ const Navbar = () => {
         </div>
       </div>
       <div className="flex items-center justify-between gap-3 sm:justify-end">
-        <button
-          type="button"
-          onClick={toggleTheme}
-          className={`rounded-full border px-3 py-2 text-sm shadow-sm hover:bg-slate-50 ${isDark
-              ? "border-slate-900 bg-slate-900 text-white"
-              : "border-slate-200 bg-white text-slate-600"
-            }`}
-          aria-label="Dark Mode"
-          title="Dark Mode"
-        >
-          <CiDark />
-        </button>
         <button
           type="button"
           className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm hover:bg-slate-50"

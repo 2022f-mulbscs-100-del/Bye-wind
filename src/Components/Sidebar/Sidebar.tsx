@@ -10,6 +10,7 @@ import {
   FiGrid,
   FiHome,
   FiLayers,
+  FiShoppingBag,
   FiSettings,
   FiUsers,
 } from "react-icons/fi";
@@ -26,6 +27,7 @@ const iconMap: Record<string, IconType> = {
   "Branches Managment": FiGrid,
   "Staff Managment": FiUsers,
   Reservation: FiBookOpen,
+  Orders: FiShoppingBag,
   Payment: FiCreditCard,
   "Guest CRM": FiBriefcase,
   Marketing: FiBarChart2,

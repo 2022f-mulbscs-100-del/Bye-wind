@@ -27,14 +27,31 @@ const ProfileHeader = ({
           <div className="h-20 w-20 rounded-full bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center">
             <FiUser className="text-3xl text-slate-600" />
           </div>
-          <div>
+          <div className="min-w-0">
             {isEditing ? (
-              <input
-                type="text"
-                value={draftProfile.name}
-                onChange={(event) => onChange("name", event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-lg font-semibold text-slate-900 focus:outline-none"
-              />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <input
+                  type="text"
+                  value={draftProfile.name}
+                  onChange={(event) => onChange("name", event.target.value)}
+                  placeholder="Name"
+                  className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-lg font-semibold text-slate-900 focus:outline-none sm:col-span-3"
+                />
+                <input
+                  type="text"
+                  value={draftProfile.phone}
+                  onChange={(event) => onChange("phone", event.target.value)}
+                  placeholder="Phone"
+                  className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 focus:outline-none"
+                />
+                <input
+                  type="text"
+                  value={draftProfile.location}
+                  onChange={(event) => onChange("location", event.target.value)}
+                  placeholder="Location"
+                  className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 focus:outline-none sm:col-span-2"
+                />
+              </div>
             ) : (
               <div className="text-2xl font-semibold text-slate-900">{profile.name}</div>
             )}

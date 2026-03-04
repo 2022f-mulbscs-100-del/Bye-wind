@@ -11,31 +11,27 @@ type StatsCardProps = {
 
 const toneStyles: Record<
   NonNullable<StatsCardProps["tone"]>,
-  { surface: string; ring: string; icon: string; accent: string }
+  { icon: string; accent: string; glow: string }
 > = {
   blue: {
-    surface: "bg-blue-50/70",
-    ring: "border-blue-100",
-    icon: "text-blue-700 bg-blue-100",
+    icon: "text-blue-700 bg-blue-100/90 dark:text-blue-300 dark:bg-blue-500/20",
     accent: "bg-blue-500",
+    glow: "from-blue-500/20",
   },
   violet: {
-    surface: "bg-violet-50/70",
-    ring: "border-violet-100",
-    icon: "text-violet-700 bg-violet-100",
+    icon: "text-violet-700 bg-violet-100/90 dark:text-violet-300 dark:bg-violet-500/20",
     accent: "bg-violet-500",
+    glow: "from-violet-500/20",
   },
   indigo: {
-    surface: "bg-indigo-50/70",
-    ring: "border-indigo-100",
-    icon: "text-indigo-700 bg-indigo-100",
+    icon: "text-indigo-700 bg-indigo-100/90 dark:text-indigo-300 dark:bg-indigo-500/20",
     accent: "bg-indigo-500",
+    glow: "from-indigo-500/20",
   },
   sky: {
-    surface: "bg-sky-50/70",
-    ring: "border-sky-100",
-    icon: "text-sky-700 bg-sky-100",
+    icon: "text-sky-700 bg-sky-100/90 dark:text-sky-300 dark:bg-sky-500/20",
     accent: "bg-sky-500",
+    glow: "from-sky-500/20",
   },
 };
 
@@ -44,11 +40,12 @@ const StatsCard = ({ title, value, change, trend = "up", icon, tone = "blue" }: 
 
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border p-5 shadow-sm ${styles.surface} ${styles.ring}`}
+      className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700/60 dark:bg-slate-900"
     >
-      <div className={`absolute inset-x-0 top-0 h-1 ${styles.accent}`} />
       <div className="flex items-center justify-between">
-        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          {title}
+        </div>
         {icon && (
           <div className={`flex h-9 w-9 items-center justify-center rounded-full ${styles.icon}`}>
             {icon}
@@ -56,7 +53,9 @@ const StatsCard = ({ title, value, change, trend = "up", icon, tone = "blue" }: 
         )}
       </div>
       <div className="mt-6 flex items-end justify-between">
-        <div className="text-[2rem] font-bold leading-none text-slate-900">{value}</div>
+        <div className="text-[2rem] font-bold leading-none text-slate-900 dark:text-slate-100">
+          {value}
+        </div>
         <div
           className={`text-sm font-semibold ${
             trend === "up" ? "text-emerald-600" : "text-rose-600"
