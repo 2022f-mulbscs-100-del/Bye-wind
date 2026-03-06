@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   FiCalendar,
@@ -73,30 +73,80 @@ const emptyStaff: Staff = {
 const StaffManagment = () => {
   const [staffList, setStaffList] = useState<Staff[]>(initialStaff);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftStaff, setDraftStaff] = useState<Staff | null>(null);
+  const [formError, setFormError] = useState("");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-  const editingStaff = useMemo(() => {
-    if (editingId === "new") return emptyStaff;
-    return staffList.find((staff) => staff.id === editingId) ?? null;
-  }, [editingId, staffList]);
+  const openCreateForm = () => {
+    setEditingId("new");
+    setDraftStaff({ ...emptyStaff });
+    setFormError("");
+    setOpenMenuId(null);
+  };
 
-  const handleSave = (next: Staff) => {
+  const openEditForm = (staff: Staff) => {
+    setEditingId(staff.id);
+    setDraftStaff({ ...staff });
+    setFormError("");
+    setOpenMenuId(null);
+  };
+
+  const closeForm = () => {
+    setEditingId(null);
+    setDraftStaff(null);
+    setFormError("");
+  };
+
+  const handleSave = () => {
+    if (!draftStaff) return;
+
+    const next = {
+      ...draftStaff,
+      name: draftStaff.name.trim(),
+      role: draftStaff.role.trim(),
+      availability: draftStaff.availability.trim(),
+      location: draftStaff.location.trim(),
+      phone: draftStaff.phone.trim(),
+      email: draftStaff.email.trim().toLowerCase(),
+    };
+
+    if (!next.name || !next.role || !next.email) {
+      setFormError("Name, role, and email are required.");
+      return;
+    }
+
+    const duplicateEmail = staffList.some(
+      (staff) => staff.email.toLowerCase() === next.email && staff.id !== next.id
+    );
+    if (duplicateEmail) {
+      setFormError("A staff member with this email already exists.");
+      return;
+    }
+
     if (editingId === "new") {
-      const created = { ...next, id: `s${staffList.length + 1}` };
+      const nextIdNumber =
+        Math.max(
+          ...staffList.map((staff) => {
+            const parsed = Number(staff.id.replace("s", ""));
+            return Number.isFinite(parsed) ? parsed : 0;
+          }),
+          0
+        ) + 1;
+      const created = { ...next, id: `s${nextIdNumber}` };
       setStaffList((prev) => [created, ...prev]);
-      setEditingId(null);
+      closeForm();
       return;
     }
 
     setStaffList((prev) =>
       prev.map((staff) => (staff.id === next.id ? next : staff))
     );
-    setEditingId(null);
+    closeForm();
   };
 
   const handleDelete = (id: string) => {
     setStaffList((prev) => prev.filter((staff) => staff.id !== id));
-    if (editingId === id) setEditingId(null);
+    if (editingId === id) closeForm();
   };
 
   return (
@@ -115,7 +165,7 @@ const StaffManagment = () => {
         </div>
         <button
           type="button"
-          onClick={() => setEditingId("new")}
+          onClick={openCreateForm}
           className="flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-800"
         >
           <FiPlus />
@@ -123,7 +173,7 @@ const StaffManagment = () => {
         </button>
       </div>
 
-      {editingStaff && (
+      {draftStaff && (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="text-sm font-semibold text-slate-900">
@@ -131,7 +181,7 @@ const StaffManagment = () => {
             </div>
             <button
               type="button"
-              onClick={() => setEditingId(null)}
+              onClick={closeForm}
               className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
             >
               Cancel
@@ -153,32 +203,37 @@ const StaffManagment = () => {
                 {field.label}
                 <input
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
-                  value={editingStaff[field.key as keyof Staff] as string}
+                  value={draftStaff[field.key as keyof Staff] as string}
                   onChange={(event) =>
-                    setEditingId((prev) => {
-                      if (!prev) return prev;
-                      handleSave({
-                        ...editingStaff,
-                        [field.key]: event.target.value,
-                      } as Staff);
-                      return prev;
-                    })
+                    setDraftStaff((prev) =>
+                      prev
+                        ? ({
+                            ...prev,
+                            [field.key]: event.target.value,
+                          } as Staff)
+                        : prev
+                    )
                   }
                 />
               </label>
             ))}
           </div>
+          {formError ? (
+            <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
+              {formError}
+            </div>
+          ) : null}
           <div className="mt-4 flex items-center gap-2">
             <button
               type="button"
-              onClick={() => handleSave(editingStaff)}
+              onClick={handleSave}
               className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500"
             >
               Save
             </button>
             <button
               type="button"
-              onClick={() => setEditingId(null)}
+              onClick={closeForm}
               className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
             >
               Cancel
@@ -257,8 +312,7 @@ const StaffManagment = () => {
                           <button
                             type="button"
                             onClick={() => {
-                              setEditingId(staff.id);
-                              setOpenMenuId(null);
+                              openEditForm(staff);
                             }}
                             className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-600 hover:bg-slate-50"
                           >

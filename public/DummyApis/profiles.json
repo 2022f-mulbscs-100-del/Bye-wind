@@ -18,7 +18,7 @@
       "id": "user-001",
       "role": "user",
       "name": "Guest User",
-      "email": "user@byewind.com",
+      "email": "",
       "password": "User@123"
     }
   ]

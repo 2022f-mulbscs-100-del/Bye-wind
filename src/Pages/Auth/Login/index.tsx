@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { FiArrowRight, FiLock, FiMail } from "react-icons/fi";
+import { FiArrowRight, FiEye, FiEyeOff, FiLock, FiMail } from "react-icons/fi";
 
 type Profile = {
   id: string;
@@ -15,6 +15,7 @@ const Login = () => {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
 
   const validate = () => {
@@ -158,12 +159,21 @@ const Login = () => {
               <div className="mt-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                 <FiLock className="text-slate-400" />
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   placeholder="••••••••"
                   className="w-full bg-transparent text-sm text-slate-700 focus:outline-none"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="text-slate-500 hover:text-slate-700"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <FiEyeOff /> : <FiEye />}
+                </button>
               </div>
             </label>
           </div>

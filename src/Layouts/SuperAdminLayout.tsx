@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { useState } from "react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   FiActivity,
   FiArchive,
@@ -15,6 +15,7 @@ import {
   FiTerminal,
   FiUsers,
   FiX,
+  FiLogOut,
 } from "react-icons/fi";
 import { useScreenSize } from "../customHooks/ScreenSize";
 
@@ -37,14 +38,18 @@ const COLLAPSED_WIDTH = 72;
 
 const SuperAdminLayout = () => {
   const size = useScreenSize();
-  const location = useLocation();
+  const navigate = useNavigate();
   const isMobile = size <= 900;
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  useEffect(() => {
-    setIsSidebarOpen(false);
-  }, [location.pathname, isMobile]);
+  const handleSignOut = () => {
+    localStorage.removeItem("isAuthenticated");
+    localStorage.removeItem("auth_email");
+    localStorage.removeItem("auth_role");
+    localStorage.removeItem("auth_name");
+    navigate("/login");
+  };
 
   const sidebarNav = (
     <div
@@ -125,6 +130,31 @@ const SuperAdminLayout = () => {
           </NavLink>
         ))}
       </nav>
+
+      <div className="mt-4 border-t border-slate-100 px-4 pt-3">
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className={`grid w-full items-center rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 ${
+            isCollapsed ? "px-2 py-2" : "px-3 py-2"
+          }`}
+          style={{
+            gridTemplateColumns: isCollapsed ? "20px 0fr" : "20px 1fr",
+            columnGap: isCollapsed ? "0px" : "12px",
+          }}
+        >
+          <span className="flex h-5 w-5 items-center justify-center">
+            <FiLogOut className="text-base flex-shrink-0" />
+          </span>
+          <span
+            className={`overflow-hidden whitespace-nowrap transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+              isCollapsed ? "pointer-events-none -translate-x-1 opacity-0" : "translate-x-0 opacity-100"
+            }`}
+          >
+            Sign out
+          </span>
+        </button>
+      </div>
     </div>
   );
 

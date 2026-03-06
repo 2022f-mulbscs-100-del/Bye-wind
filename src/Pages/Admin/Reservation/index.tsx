@@ -2,19 +2,16 @@ import { useState } from "react";
 import {
   FiCalendar,
   FiCheckCircle,
-  FiClock,
   FiEdit2,
   FiFilter,
-  FiGrid,
   FiPlus,
-  FiRefreshCw,
   FiShuffle,
   FiUserPlus,
   FiXCircle,
   FiMoreHorizontal,
 } from "react-icons/fi";
 
-const reservations = [
+const initialReservations = [
   {
     id: "R-2041",
     name: "Maya Carter",
@@ -68,6 +65,80 @@ const heatmap = [
 const Reservation = () => {
   const [view, setView] = useState("Day");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [reservations, setReservations] = useState(initialReservations);
+  const [isNewReservationOpen, setIsNewReservationOpen] = useState(false);
+  const [newReservation, setNewReservation] = useState({
+    name: "",
+    date: "",
+    time: "",
+    party: 2,
+    table: "",
+    source: "Web",
+  });
+
+  const openReservationModal = (source: "Web" | "App" | "Phone" | "Walk-in" = "Web") => {
+    setNewReservation((prev) => ({ ...prev, source }));
+    setIsNewReservationOpen(true);
+  };
+
+  const addReservation = () => {
+    const trimmedName = newReservation.name.trim();
+    if (!trimmedName || !newReservation.date || !newReservation.time || !newReservation.table.trim()) {
+      return;
+    }
+
+    const nextIdNumber =
+      Math.max(
+        ...reservations.map((item) => {
+          const parsed = Number(item.id.replace("R-", ""));
+          return Number.isFinite(parsed) ? parsed : 0;
+        }),
+        2040
+      ) + 1;
+
+    const dateObj = new Date(newReservation.date);
+    const todayObj = new Date();
+    const tomorrowObj = new Date();
+    tomorrowObj.setDate(todayObj.getDate() + 1);
+    const normalized = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+    const today = new Date(todayObj.getFullYear(), todayObj.getMonth(), todayObj.getDate());
+    const tomorrow = new Date(tomorrowObj.getFullYear(), tomorrowObj.getMonth(), tomorrowObj.getDate());
+
+    const dateLabel =
+      normalized.getTime() === today.getTime()
+        ? "Today"
+        : normalized.getTime() === tomorrow.getTime()
+        ? "Tomorrow"
+        : dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+    const [hourRaw, minuteRaw] = newReservation.time.split(":");
+    const hour = Number(hourRaw);
+    const minute = Number(minuteRaw);
+    const period = hour >= 12 ? "PM" : "AM";
+    const twelveHour = hour % 12 || 12;
+    const timeLabel = `${twelveHour}:${String(minute).padStart(2, "0")} ${period}`;
+
+    const created = {
+      id: `R-${nextIdNumber}`,
+      name: trimmedName,
+      time: `${dateLabel}, ${timeLabel}`,
+      party: Number(newReservation.party),
+      status: "Confirmed",
+      table: newReservation.table.trim(),
+      source: newReservation.source,
+    };
+
+    setReservations((prev) => [created, ...prev]);
+    setNewReservation({
+      name: "",
+      date: "",
+      time: "",
+      party: 2,
+      table: "",
+      source: "Web",
+    });
+    setIsNewReservationOpen(false);
+  };
 
   return (
     <div className="space-y-6">
@@ -82,7 +153,11 @@ const Reservation = () => {
           <button className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
             <FiFilter /> Filters
           </button>
-          <button className="flex items-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white">
+          <button
+            type="button"
+            onClick={() => openReservationModal("Web")}
+            className="flex items-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white"
+          >
             <FiPlus /> New Reservation
           </button>
         </div>
@@ -140,7 +215,11 @@ const Reservation = () => {
               </div>
             ))}
           </div>
-          <button className="mt-4 w-full rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white">
+          <button
+            type="button"
+            onClick={() => openReservationModal("Walk-in")}
+            className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white"
+          >
             Add walk‑in
           </button>
         </div>
@@ -247,7 +326,7 @@ const Reservation = () => {
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="text-sm font-semibold text-slate-900">Auto table allocation</div>
             <div className="mt-3 text-sm text-slate-500">Assign best table based on preferences & capacity.</div>
-            <button className="mt-4 w-full rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white">
+            <button className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white">
               <FiShuffle /> Run allocation
             </button>
           </div>
@@ -298,6 +377,100 @@ const Reservation = () => {
           ))}
         </div>
       </div>
+
+      {isNewReservationOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="text-base font-semibold text-slate-900">
+                {newReservation.source === "Walk-in" ? "Add Walk-in" : "Create New Reservation"}
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsNewReservationOpen(false)}
+                className="rounded-full border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
+                aria-label="Close new reservation modal"
+              >
+                <FiXCircle />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <input
+                value={newReservation.name}
+                onChange={(event) =>
+                  setNewReservation((prev) => ({ ...prev, name: event.target.value }))
+                }
+                placeholder="Guest name"
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+              />
+              <input
+                type="date"
+                value={newReservation.date}
+                onChange={(event) =>
+                  setNewReservation((prev) => ({ ...prev, date: event.target.value }))
+                }
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+              />
+              <input
+                type="time"
+                value={newReservation.time}
+                onChange={(event) =>
+                  setNewReservation((prev) => ({ ...prev, time: event.target.value }))
+                }
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+              />
+              <input
+                type="number"
+                min={1}
+                value={newReservation.party}
+                onChange={(event) =>
+                  setNewReservation((prev) => ({ ...prev, party: Number(event.target.value) }))
+                }
+                placeholder="Party size"
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+              />
+              <input
+                value={newReservation.table}
+                onChange={(event) =>
+                  setNewReservation((prev) => ({ ...prev, table: event.target.value }))
+                }
+                placeholder="Table (e.g. T-08)"
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+              />
+              <select
+                value={newReservation.source}
+                onChange={(event) =>
+                  setNewReservation((prev) => ({ ...prev, source: event.target.value }))
+                }
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+              >
+                <option value="Web">Web</option>
+                <option value="App">App</option>
+                <option value="Phone">Phone</option>
+                <option value="Walk-in">Walk-in</option>
+              </select>
+            </div>
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsNewReservationOpen(false)}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={addReservation}
+                className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+              >
+                Save reservation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

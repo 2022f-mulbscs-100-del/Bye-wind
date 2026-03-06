@@ -16,7 +16,7 @@ const Layout = () => {
   }, [location.pathname, isMobile]);
 
   return (
-    <div className="flex min-h-screen bg-slate-100">
+    <div className="flex h-screen overflow-hidden bg-slate-100">
       {!isMobile && (
         <div className="p-4 z-[100]">
           <ErrorBoundary>
@@ -27,14 +27,14 @@ const Layout = () => {
         </div>
       )}
 
-      <div className="flex-1 min-w-0 p-4">
-        <div className="sticky top-4 z-30">
+      <div className="flex min-w-0 flex-1 flex-col p-4">
+        <div className="shrink-0">
           <Navbar
             showMenuButton={isMobile}
             onMenuClick={() => setIsSidebarOpen((prev) => !prev)}
           />
         </div>
-        <div className="mt-4">
+        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-3">
           <Outlet />
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { IconType } from "react-icons";
 import {
   FiBarChart2,
@@ -43,11 +43,35 @@ const SideBar = () => {
   const [groupId, setGroupId] = useState("master");
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const groupSwitcherRef = useRef<HTMLDivElement | null>(null);
 
   const activeGroup = useMemo(
     () => sidebarGroups.find((g) => g.id === groupId) ?? sidebarGroups[0],
     [groupId]
   );
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!isOpen) return;
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (groupSwitcherRef.current?.contains(target)) return;
+      setIsOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
 
   return (
     <div className="relative">
@@ -87,6 +111,7 @@ const SideBar = () => {
           {/* ROLE SWITCH */}
           <div className="px-4">
             <div
+              ref={groupSwitcherRef}
               className={`relative transition-[margin] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
                 isCollapsed ? "mb-3" : "mb-6"
               }`}

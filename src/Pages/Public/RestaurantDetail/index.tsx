@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import PublicNavbar from "../../../Components/Public/PublicNavbar";
 import Loader from "../../../Components/loader";
 import GalleryCarousel from "./GalleryCarousel";
@@ -28,19 +28,52 @@ type RestaurantDetailData = {
     menu?: { name: string; price: string; description: string }[];
     reviews?: { author: string; rating: number; text: string }[];
     floorHighlights?: { label: string; value: string }[];
-    floorTables?: { id: string; x: number; y: number; w: number; h: number; label: string }[];
+    floorTables?: {
+      id: string;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      label: string;
+      zone?: string;
+      shape?: "Round" | "Square" | "Rectangle";
+      seats?: number;
+      rotation?: number;
+    }[];
     upcoming?: { name: string; status: "Available" | "Limited" | "Full" }[];
   }[];
   detailsById?: Record<
     string,
     {
       floorHighlights: { label: string; value: string }[];
-      floorTables: { id: string; x: number; y: number; w: number; h: number; label: string }[];
+      floorTables: {
+        id: string;
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+        label: string;
+        zone?: string;
+        shape?: "Round" | "Square" | "Rectangle";
+        seats?: number;
+        rotation?: number;
+      }[];
       upcoming: { name: string; status: "Available" | "Limited" | "Full" }[];
     }
   >;
   floorHighlights: { label: string; value: string }[];
-  floorTables: { id: string; x: number; y: number; w: number; h: number; label: string }[];
+  floorTables: {
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    label: string;
+    zone?: string;
+    shape?: "Round" | "Square" | "Rectangle";
+    seats?: number;
+    rotation?: number;
+  }[];
   upcoming: { name: string; status: "Available" | "Limited" | "Full" }[];
 };
 
@@ -48,9 +81,66 @@ type Slot = { id: string; label: string; status: "Available" | "Limited" | "Full
 type TableOption = { id: string; label: string; seats: number; zone: string };
 type PaymentMethod = { id: string; label: string };
 type MenuHighlight = { name: string; description: string; price: string; tag: string };
+type FloorHighlight = { label: string; value: string };
+type FloorTable = {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  label: string;
+  zone?: string;
+  shape?: "Round" | "Square" | "Rectangle";
+  seats?: number;
+  rotation?: number;
+};
+type FloorAreaPreview = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+};
+type FloorPayloadTable = {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  seats: number;
+  zone: string;
+  shape: "Round" | "Square" | "Rectangle";
+};
+type FloorPayloadArea = {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+type FloorPayloadLayout = {
+  tables?: FloorPayloadTable[];
+  areas?: FloorPayloadArea[];
+};
+type FloorPayload = {
+  activeFloorId?: string;
+  floors?: { id: string; label: string }[];
+  settings?: {
+    canvas?: {
+      width?: number;
+      height?: number;
+    };
+  };
+  floorLayouts?: Record<string, FloorPayloadLayout>;
+};
 
 const RestaurantDetail = () => {
   const { id } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [data, setData] = useState<RestaurantDetailData>({
     restaurants: [],
@@ -81,6 +171,13 @@ const RestaurantDetail = () => {
   const [menuHighlights, setMenuHighlights] = useState<MenuHighlight[]>([]);
   const [galleryImages, setGalleryImages] = useState<string[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [dbFloors, setDbFloors] = useState<{ id: string; label: string }[]>([]);
+  const [dbSelectedFloorId, setDbSelectedFloorId] = useState<string>("");
+  const [dbFloorLayouts, setDbFloorLayouts] = useState<Record<string, FloorPayloadLayout>>({});
+  const [dbCanvasSize, setDbCanvasSize] = useState<{ width: number; height: number }>({
+    width: 1200,
+    height: 700,
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -134,6 +231,34 @@ const RestaurantDetail = () => {
   }, [id]);
 
   useEffect(() => {
+    let mounted = true;
+    fetch("/DummyApis/floor-management-db-payload.json")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: FloorPayload | null) => {
+        if (!mounted || !json) return;
+        const floors = json.floors ?? [];
+        const layouts = json.floorLayouts ?? {};
+        const fallbackFloorId = floors[0]?.id ?? Object.keys(layouts)[0] ?? "";
+        const selectedFloorId = json.activeFloorId && layouts[json.activeFloorId]
+          ? json.activeFloorId
+          : fallbackFloorId;
+
+        setDbFloors(floors);
+        setDbFloorLayouts(layouts);
+        setDbSelectedFloorId(selectedFloorId);
+        setDbCanvasSize({
+          width: json.settings?.canvas?.width ?? 1200,
+          height: json.settings?.canvas?.height ?? 700,
+        });
+      })
+      .catch(() => null);
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isReservationOpen) return;
     let mounted = true;
     setReservationLoading(true);
@@ -174,8 +299,69 @@ const RestaurantDetail = () => {
         upcoming: restaurant.upcoming ?? data.upcoming,
       }
       : undefined);
-  const floorHighlights = restaurantDetails?.floorHighlights ?? data.floorHighlights ?? [];
-  const floorTables = restaurantDetails?.floorTables ?? data.floorTables ?? [];
+  const selectedLayout = useMemo(
+    () => (dbSelectedFloorId ? dbFloorLayouts[dbSelectedFloorId] : undefined),
+    [dbFloorLayouts, dbSelectedFloorId]
+  );
+  const selectedLayoutTables = useMemo(
+    () => selectedLayout?.tables ?? [],
+    [selectedLayout]
+  );
+  const selectedLayoutArea = useMemo(
+    () => selectedLayout?.areas?.[0],
+    [selectedLayout]
+  );
+  const computedFloorHighlights = useMemo<FloorHighlight[]>(
+    () =>
+      Object.entries(
+        selectedLayoutTables.reduce<Record<string, number>>((acc, table) => {
+          acc[table.zone] = (acc[table.zone] ?? 0) + 1;
+          return acc;
+        }, {})
+      ).map(([zone, count]) => ({ label: zone, value: `${count} tables` })),
+    [selectedLayoutTables]
+  );
+  const computedFloorTables = useMemo<FloorTable[]>(
+    () =>
+      selectedLayoutTables.map((table) => ({
+        id: table.id,
+        label: table.name,
+        x: Math.round(table.x),
+        y: Math.round(table.y),
+        w: Math.max(54, Math.round(table.width)),
+        h: Math.max(38, Math.round(table.height)),
+        zone: table.zone,
+        shape: table.shape,
+        seats: table.seats,
+        rotation: table.rotation,
+      })),
+    [selectedLayoutTables]
+  );
+  const computedFloorArea = useMemo<FloorAreaPreview | null>(
+    () =>
+      selectedLayoutArea
+        ? {
+          id: selectedLayoutArea.id,
+          label: selectedLayoutArea.label,
+          x: Math.round(selectedLayoutArea.x),
+          y: Math.round(selectedLayoutArea.y),
+          width: Math.round(selectedLayoutArea.width),
+          height: Math.round(selectedLayoutArea.height),
+        }
+        : null,
+    [selectedLayoutArea]
+  );
+  const floorHighlights =
+    (computedFloorHighlights.length > 0 ? computedFloorHighlights : undefined) ??
+    restaurantDetails?.floorHighlights ??
+    data.floorHighlights ??
+    [];
+  const floorTables =
+    (computedFloorTables.length > 0 ? computedFloorTables : undefined) ??
+    restaurantDetails?.floorTables ??
+    data.floorTables ??
+    [];
+  const floorArea = computedFloorArea;
   const upcoming = restaurantDetails?.upcoming ?? data.upcoming ?? [];
 
   const summaryItems = useMemo(
@@ -216,6 +402,22 @@ const RestaurantDetail = () => {
     const favorites = getFavorites();
     setIsFavorite(favorites.some((item) => item.id === restaurant.id));
   }, [restaurant]); // Updated dependency to restaurant
+
+  useEffect(() => {
+    if (!restaurant) return;
+    if (searchParams.get("book") !== "1") return;
+    setIsReservationOpen(true);
+    setStep("slot");
+    setSelectedSlot(null);
+    setSelectedTable(null);
+    setSelectedMethod(null);
+    setReservationDate("");
+    setGuestCount(2);
+    setSpecialRequest("");
+    const next = new URLSearchParams(searchParams);
+    next.delete("book");
+    setSearchParams(next, { replace: true });
+  }, [restaurant, searchParams, setSearchParams]);
 
   if (loading) {
     return (
@@ -371,11 +573,20 @@ const RestaurantDetail = () => {
           }}
         />
 
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
-          <FloorOverviewCard highlights={floorHighlights} tables={floorTables} />
+        <div className="grid grid-cols-1 gap-4">
+          <FloorOverviewCard
+            highlights={floorHighlights}
+            tables={floorTables}
+            area={floorArea}
+            canvasWidth={dbCanvasSize.width}
+            canvasHeight={dbCanvasSize.height}
+            floors={dbFloors}
+            selectedFloorId={dbSelectedFloorId}
+            onFloorSelect={setDbSelectedFloorId}
+          />
           <MenuHighlightsCard items={menuHighlights ?? []} />
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:col-span-full">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <BookTableCard
               slots={upcoming}
               onStart={() => {
@@ -401,7 +612,7 @@ const RestaurantDetail = () => {
               onLogin={() => navigate("/login")}
             />
           </div>
-          <div className="xl:col-span-full rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          {/* <div className="xl:col-span-full rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-slate-900">Full menu</div>
@@ -416,7 +627,7 @@ const RestaurantDetail = () => {
                 View full menu
               </Link>
             </div>
-          </div>
+          </div> */}
         </div>
 
         {reservationSuccess ? (

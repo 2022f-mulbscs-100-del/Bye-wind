@@ -1,6 +1,6 @@
 const APIIntegrations = () => {
   return (
-    <div className="space-y-6">
+    <div className="h-[420px] overflow-y-auto space-y-6">
       <div>
         <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
           API & Integration Management

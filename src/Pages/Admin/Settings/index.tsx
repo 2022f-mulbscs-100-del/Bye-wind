@@ -272,7 +272,7 @@ const Settings = () => {
               {settings.ops.businessHours.map((row) => (
                 <div
                   key={row.day}
-                  className="grid grid-cols-[48px_1fr_1fr_auto] items-center gap-2 rounded-xl bg-slate-50 px-4 py-2"
+                  className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 px-3 py-2 sm:grid-cols-[48px_1fr_1fr_auto] sm:items-center sm:px-4"
                 >
                   <span>{row.day}</span>
                   <input
@@ -290,7 +290,7 @@ const Settings = () => {
                         },
                       }))
                     }
-                    className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                    className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
                   />
                   <input
                     type="time"
@@ -307,9 +307,9 @@ const Settings = () => {
                         },
                       }))
                     }
-                    className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                    className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
                   />
-                  <label className="flex items-center gap-1 text-xs">
+                  <label className="flex items-center justify-end gap-1 text-xs sm:justify-start">
                     <input
                       type="checkbox"
                       checked={row.closed}
@@ -330,7 +330,7 @@ const Settings = () => {
                 </div>
               ))}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <FiCalendar className="text-slate-400" />
               <input
                 type="date"
@@ -394,7 +394,7 @@ const Settings = () => {
             ].map((label) => (
               <div
                 key={label}
-                className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-2"
+                className="flex flex-col gap-2 rounded-xl bg-slate-50 px-4 py-2 sm:flex-row sm:items-center sm:justify-between"
               >
                 <span className="text-sm text-slate-600">{label}</span>
                 {label === "Max party size" ? (
@@ -413,7 +413,7 @@ const Settings = () => {
                         },
                       }))
                     }
-                    className="w-28 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs sm:w-28"
                   />
                 ) : null}
                 {label === "Advance booking window (days)" ? (
@@ -432,7 +432,7 @@ const Settings = () => {
                         },
                       }))
                     }
-                    className="w-28 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs sm:w-28"
                   />
                 ) : null}
                 {label === "Same‑day cutoff" ? (
@@ -451,7 +451,7 @@ const Settings = () => {
                         },
                       }))
                     }
-                    className="w-28 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs sm:w-28"
                   />
                 ) : null}
                 {label === "Cancellation window (hrs)" ? (
@@ -470,7 +470,7 @@ const Settings = () => {
                         },
                       }))
                     }
-                    className="w-28 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs sm:w-28"
                   />
                 ) : null}
               </div>
@@ -487,7 +487,7 @@ const Settings = () => {
               {settings.ops.turnTime.largePartySize}+: +
               {settings.ops.turnTime.extraMinutesForLargeParty} mins
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <input
                 type="number"
                 value={settings.ops.turnTime.weekdayMinutes}
@@ -593,7 +593,7 @@ const Settings = () => {
             ].map((label) => (
               <div
                 key={label}
-                className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-2"
+                className="flex flex-col gap-2 rounded-xl bg-slate-50 px-4 py-2 sm:flex-row sm:items-center sm:justify-between"
               >
                 <span className="text-sm text-slate-600">{label}</span>
                 {label === "Min party size" ? (
@@ -612,7 +612,7 @@ const Settings = () => {
                         },
                       }))
                     }
-                    className="w-28 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs sm:w-28"
                   />
                 ) : null}
                 {label === "Max party size" ? (
@@ -631,7 +631,7 @@ const Settings = () => {
                         },
                       }))
                     }
-                    className="w-28 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs sm:w-28"
                   />
                 ) : null}
                 {label === "Combinable tables" ? (
@@ -650,7 +650,7 @@ const Settings = () => {
                         },
                       }))
                     }
-                    className="w-28 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs sm:w-28"
                   />
                 ) : null}
                 {label === "VIP designation" ? (
@@ -891,7 +891,7 @@ const Settings = () => {
                 className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2"
                 placeholder="Timezone"
               />
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <input
                   type="number"
                   value={settings.integrations.widget.minPartySize}

@@ -1,6 +1,14 @@
-import { FiCheckCircle, FiMapPin, FiPhone, FiUploadCloud } from "react-icons/fi";
+import { useState } from "react";
+import { FiCheckCircle, FiMapPin, FiPhone } from "react-icons/fi";
 
 const BecomeSeller = () => {
+  const [showToast, setShowToast] = useState(false);
+
+  const handleSubmit = () => {
+    setShowToast(true);
+    window.setTimeout(() => setShowToast(false), 2200);
+  };
+
   return (
     <div className="min-h-screen  bg-slate-100 px-4 py-10">
       <div className="mx-auto w-full max-w-6xl space-y-6">
@@ -56,9 +64,8 @@ const BecomeSeller = () => {
             <div className="space-y-4">
               <div className="text-sm font-semibold text-slate-900">Restaurant Info</div>
               {[
-                { label: "Business name", placeholder: "ByeWind Bistro" },
-                { label: "Brand name", placeholder: "ByeWind" },
-                { label: "Cuisine types", placeholder: "Mediterranean, Grill" },
+                { label: "Restaurant name", placeholder: "ByeWind Bistro" },
+                { label: "Cuisine type", placeholder: "Mediterranean, Grill" },
               ].map((field) => (
                 <label key={field.label} className="block text-xs font-semibold text-slate-500">
                   {field.label}
@@ -72,6 +79,13 @@ const BecomeSeller = () => {
 
             <div className="space-y-4">
               <div className="text-sm font-semibold text-slate-900">Contact & Location</div>
+              <label className="block text-xs font-semibold text-slate-500">
+                Owner/Contact person name
+                <input
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                  placeholder="John Doe"
+                />
+              </label>
               <label className="block text-xs font-semibold text-slate-500">
                 Address
                 <div className="mt-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -93,25 +107,30 @@ const BecomeSeller = () => {
                 </div>
               </label>
               <label className="block text-xs font-semibold text-slate-500">
-                Upload brand assets
-                <div className="mt-2 flex items-center justify-between rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-500">
-                  <span>Logo, menu, and photos</span>
-                  <FiUploadCloud />
-                </div>
+                Email
+                <input
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                  placeholder="owner@restaurant.com"
+                />
               </label>
             </div>
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-3">
-            <button className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white shadow-sm">
+          <div className="mt-6 flex flex-wrap justify-end gap-3">
+            <button
+              onClick={handleSubmit}
+              className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+            >
               Submit for review
-            </button>
-            <button className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-600">
-              Save draft
             </button>
           </div>
         </div>
       </div>
+      {showToast && (
+        <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-xl">
+          Submitted for review
+        </div>
+      )}
     </div>
   );
 };

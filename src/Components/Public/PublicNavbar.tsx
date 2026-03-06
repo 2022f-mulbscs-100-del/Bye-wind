@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { FiShoppingCart } from "react-icons/fi";
+import { useState } from "react";
+import { FiLogOut } from "react-icons/fi";
 import { FiSearch } from "react-icons/fi";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
@@ -8,26 +8,17 @@ const PublicNavbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const isAuthenticated = localStorage.getItem("isAuthenticated") === "true";
-  const [searchTerm, setSearchTerm] = useState("");
-  const [cartCount, setCartCount] = useState(0);
+  const [searchTerm, setSearchTerm] = useState(
+    () => new URLSearchParams(location.search).get("q") ?? ""
+  );
 
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    setSearchTerm(params.get("q") ?? "");
-  }, [location.search]);
-
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem("guest_cart");
-      const items = stored
-        ? (JSON.parse(stored) as { quantity: number }[])
-        : [];
-      setCartCount(items.reduce((sum, item) => sum + item.quantity, 0));
-    } catch {
-      setCartCount(0);
-    }
-  }, [location.pathname]);
-
+  const handleSignOut = () => {
+    localStorage.removeItem("isAuthenticated");
+    localStorage.removeItem("auth_email");
+    localStorage.removeItem("auth_role");
+    localStorage.removeItem("auth_name");
+    navigate("/login");
+  };
 
   return (
     <nav className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
@@ -63,19 +54,28 @@ const PublicNavbar = () => {
         >
           Restaurants
         </Link>
-        <Link
+        {/* <Link
           to="/cart"
           className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 sm:px-4"
         >
-          <FiShoppingCart />
-          Cart {cartCount > 0 ? `(${cartCount})` : ""}
-        </Link>
+          Cart
+        </Link> */}
         {isAuthenticated && <Link
           to="/guest-profile"
           className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 sm:px-4"
         >
           Profile
         </Link>}
+        {isAuthenticated && (
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 sm:px-4"
+          >
+            <FiLogOut />
+            Sign out
+          </button>
+        )}
 
       </div>
 
