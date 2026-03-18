@@ -1,14 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FiArrowRight, FiEye, FiEyeOff, FiLock, FiMail } from "react-icons/fi";
-
-type Profile = {
-  id: string;
-  role: "admin" | "super-admin" | "user";
-  name: string;
-  email: string;
-  password: string;
-};
+import { postJson } from "@/lib/api";
+import { persistAuthSession, mapBackendRoleToBrowserRole, type StaffSummary } from "@/lib/auth";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -36,69 +30,32 @@ const Login = () => {
       return;
     }
 
-    let matchedRole: Profile["role"] | null = null;
-    let matchedName: string | null = null;
-
     try {
-      const response = await fetch("/DummyApis/profiles.json");
-      if (response.ok) {
-        const json = (await response.json()) as { profiles: Profile[] };
-        const match = json.profiles.find(
-          (profile) =>
-            profile.email.toLowerCase() === email.toLowerCase() &&
-            profile.password === password
-        );
-        if (match) {
-          matchedRole = match.role;
-          matchedName = match.name;
+      const response = await postJson<{ staff: StaffSummary; token: string }>(
+        "/staff/login",
+        {
+          email,
+          password,
         }
+      );
+      const payload = response.data;
+      if (!payload || !payload.staff || !payload.token) {
+        throw new Error("Unexpected response from server");
       }
-    } catch {
-      // fall through to local user storage
-    }
 
-    if (!matchedRole) {
-      const stored = localStorage.getItem("auth_user");
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored) as {
-            email: string;
-            password: string;
-            name?: string;
-            role?: "user";
-          };
-          if (
-            parsed.email.toLowerCase() !== email.toLowerCase() ||
-            parsed.password !== password
-          ) {
-            setError("Invalid credentials. Please check your email or password.");
-            return;
-          }
-          matchedRole = parsed.role ?? "user";
-          matchedName = parsed.name ?? null;
-        } catch {
-          setError("Stored account data is invalid. Please sign up again.");
-          return;
-        }
+      persistAuthSession(payload.token, payload.staff);
+      const uiRole = mapBackendRoleToBrowserRole(payload.staff.role);
+      setError("");
+      if (uiRole === "super-admin") {
+        navigate("/super-admin");
+      } else if (uiRole === "admin") {
+        navigate("/dashboard");
       } else {
-        setError("No account found. Please sign up first.");
-        return;
+        navigate("/guest-profile");
       }
-    }
-
-    localStorage.setItem("isAuthenticated", "true");
-    localStorage.setItem("auth_email", email);
-    localStorage.setItem("auth_role", matchedRole);
-    if (matchedName) {
-      localStorage.setItem("auth_name", matchedName);
-    }
-    setError("");
-    if (matchedRole === "super-admin") {
-      navigate("/super-admin");
-    } else if (matchedRole === "admin") {
-      navigate("/dashboard");
-    } else {
-      navigate("/guest-profile");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Login failed";
+      setError(message);
     }
   };
   return (

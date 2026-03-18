@@ -4,6 +4,7 @@ import SideBar from "./Components/Sidebar/Sidebar";
 import Navbar from "./Components/Navbar/Navbar";
 import ErrorBoundary from "./ErrorBoundary";
 import { useScreenSize } from "./customHooks/ScreenSize";
+import { BranchProvider } from "./context/BranchContext";
 
 const Layout = () => {
   const size = useScreenSize();
@@ -64,4 +65,10 @@ const Layout = () => {
   );
 };
 
-export default Layout;
+const WrappedLayout = () => (
+  <BranchProvider>
+    <Layout />
+  </BranchProvider>
+);
+
+export default WrappedLayout;

@@ -12,6 +12,7 @@ const Payment = lazy(() => import("./Pages/Admin/Payment/index"));
 const Reservation = lazy(() => import("./Pages/Admin/Reservation/index"));
 // const Orders = lazy(() => import("./Pages/Admin/Orders/index"));
 const Settings = lazy(() => import("./Pages/Admin/Settings/index"));
+const Onboarding = lazy(() => import("./Pages/Admin/Onboarding/index"));
 const StaffManagment = lazy(() => import("./Pages/Admin/StaffManagment/index"));
 const StaffProfile = lazy(() => import("./Pages/Admin/StaffProfile/index"));
 const Marketing = lazy(() => import("./Pages/Admin/Marketing/index"));
@@ -95,6 +96,10 @@ export const Router = createBrowserRouter([
           {
             path: "settings",
             element: <Settings />,
+          },
+          {
+            path: "onboarding",
+            element: <Onboarding />,
           },
           {
             path: "marketing",

@@ -13,13 +13,14 @@ import {
   FiShoppingBag,
   FiSettings,
   FiUsers,
+  FiZap,
 } from "react-icons/fi";
 import { AdminBranchLevel, AdminMasterLevel } from "../../../public/SideBarData";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
+import { useBranchContext } from "@/context/BranchContext";
 
-const sidebarGroups = [
+const defaultSidebarGroups = [
   { id: "master", label: "All Branches", items: AdminMasterLevel },
-  { id: "branch", label: "Branch A", items: AdminBranchLevel },
 ];
 
 const iconMap: Record<string, IconType> = {
@@ -33,6 +34,7 @@ const iconMap: Record<string, IconType> = {
   Marketing: FiBarChart2,
   Analytics: FiBarChart2,
   Settings: FiSettings,
+  Onboarding: FiZap,
   "Floor Managment": FiLayers,
 };
 
@@ -40,14 +42,35 @@ const SIDEBAR_WIDTH = 260;
 const COLLAPSED_WIDTH = 72;
 
 const SideBar = () => {
-  const [groupId, setGroupId] = useState("master");
+  const navigate = useNavigate();
+  const { branches, selectedBranchId, setSelectedBranchId } = useBranchContext();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const groupSwitcherRef = useRef<HTMLDivElement | null>(null);
 
+  const sidebarGroups = useMemo(() => {
+    const branchGroups = branches.map((branch) => {
+      const status = (branch.status ?? "").toUpperCase();
+      const isPending =
+        status === "PENDING" || (branch.isActive && !branch.isLive && status !== "LIVE" && status !== "DRAFT");
+      const label = isPending ? `${branch.name} (Pending)` : branch.name;
+
+      return {
+        id: branch.id,
+        label,
+        items: AdminBranchLevel,
+      };
+    });
+
+    return [
+      { id: "master", label: "All Branches", items: AdminMasterLevel },
+      ...branchGroups,
+    ];
+  }, [branches]);
+
   const activeGroup = useMemo(
-    () => sidebarGroups.find((g) => g.id === groupId) ?? sidebarGroups[0],
-    [groupId]
+    () => sidebarGroups.find((g) => g.id === (selectedBranchId ?? "master")) ?? sidebarGroups[0],
+    [selectedBranchId, sidebarGroups]
   );
 
   useEffect(() => {
@@ -177,11 +200,13 @@ const SideBar = () => {
                   <button
                     key={group.id}
                     onClick={() => {
-                      setGroupId(group.id);
+                      setSelectedBranchId(group.id === "master" ? null : group.id);
                       setIsOpen(false);
+                      navigate("/dashboard");
                     }}
                     className={`w-full px-3 py-2 text-left text-sm hover:bg-slate-50 ${
-                      group.id === groupId
+                      (group.id === "master" && selectedBranchId === null) ||
+                      group.id === selectedBranchId
                         ? "bg-slate-50 text-slate-900"
                         : "text-slate-600"
                     }`}

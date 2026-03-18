@@ -1,126 +1,181 @@
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { FiMail, FiPhone, FiUserCheck } from "react-icons/fi";
+import { FiHome, FiMail, FiPhone, FiUserCheck } from "react-icons/fi";
+import { getStoredRestaurantId, isSessionActive } from "@/lib/auth";
+import { getJson } from "@/lib/api";
+import Loader from "@/Components/loader";
 
-const staffProfiles = [
-  {
-    id: "s1",
-    name: "Ava Collins",
-    role: "General Manager",
-    availability: "Full-time",
-    location: "Downtown",
-    phone: "(415) 555-2033",
-    email: "ava.collins@byewind.com",
-    bio: "Leads daily operations and guest experience strategy.",
-    certifications: ["Food Safety", "Leadership"],
-  },
-  {
-    id: "s2",
-    name: "Liam Patel",
-    role: "Head Chef",
-    availability: "Full-time",
-    location: "Uptown",
-    phone: "(415) 555-8192",
-    email: "liam.patel@byewind.com",
-    bio: "Specializes in seasonal menu development and kitchen ops.",
-    certifications: ["ServSafe", "Culinary Management"],
-  },
-  {
-    id: "s3",
-    name: "Maya Brooks",
-    role: "Floor Manager",
-    availability: "Part-time",
-    location: "Marina",
-    phone: "(415) 555-7788",
-    email: "maya.brooks@byewind.com",
-    bio: "Coordinates floor flow and guest seating logistics.",
-    certifications: ["Hospitality"],
-  },
-  {
-    id: "s4",
-    name: "Noah Patel",
-    role: "Server",
-    availability: "Weekends",
-    location: "Downtown",
-    phone: "(415) 555-1122",
-    email: "noah.patel@byewind.com",
-    bio: "Focused on VIP guest service and upselling.",
-    certifications: ["Customer Service"],
-  },
-];
+type BranchAssignment = {
+  branchId: string;
+  isPrimary: boolean;
+  branch: {
+    name: string;
+    isActive: boolean;
+  };
+};
+
+type StaffDetail = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string | null;
+  role: string;
+  isActive: boolean;
+  createdAt: string;
+  branches: BranchAssignment[];
+};
 
 const StaffProfile = () => {
   const { id } = useParams();
-  const staff = staffProfiles.find((item) => item.id === id);
+  const [staff, setStaff] = useState<StaffDetail | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  if (!staff) {
+  const restaurantId = getStoredRestaurantId();
+
+  useEffect(() => {
+    if (!isSessionActive() || !id) {
+      setIsLoading(false);
+      return;
+    }
+
+    let mounted = true;
+    const fetchStaff = async () => {
+      try {
+        const response = await getJson<StaffDetail>(`/staff/${id}`, {
+          headers: restaurantId ? { "x-restaurant-id": restaurantId } : undefined,
+        });
+        if (mounted) {
+          setStaff(response.data);
+          setError("");
+        }
+      } catch (err) {
+        if (mounted) {
+          setError("Staff member not found or access denied.");
+          console.error(err);
+        }
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    };
+
+    fetchStaff();
+    return () => {
+      mounted = false;
+    };
+  }, [id, restaurantId]);
+
+  if (isLoading) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="text-sm font-semibold text-slate-900">Staff not found</div>
-        <p className="mt-2 text-sm text-slate-500">
-          This staff profile does not exist.
-        </p>
+      <div className="flex h-64 items-center justify-center">
+        <Loader size={32} color="#0f172a" />
+      </div>
+    );
+  }
+
+  if (error || !staff) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <Link
+            to="/dashboard/staff"
+            className="inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50"
+          >
+            Back to Staff Management
+          </Link>
+        </div>
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-rose-700 shadow-sm">
+          <div className="font-semibold">Staff member not found</div>
+          <p className="mt-1 text-sm opacity-90">{error || "This profile may have been removed."}</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex items-center justify-between">
         <Link
           to="/dashboard/staff"
           className="inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50"
         >
           Back to Staff Management
         </Link>
+        <div className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${staff.isActive ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+          {staff.isActive ? 'Active' : 'Deactivated'}
+        </div>
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-500">
-            <FiUserCheck className="text-xl" />
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-500 shadow-inner">
+            <FiUserCheck className="text-2xl" />
           </div>
           <div>
-            <div className="text-xl font-semibold text-slate-900">
-              {staff.name}
+            <div className="text-2xl font-bold text-slate-900">
+              {staff.firstName} {staff.lastName}
             </div>
-            <div className="text-sm text-slate-500">{staff.role}</div>
+            <div className="text-sm font-medium text-slate-500 uppercase tracking-wide">{staff.role.replace('_', ' ')}</div>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-sm font-semibold text-slate-900">Details</div>
-          <div className="mt-3 space-y-2 text-sm text-slate-600">
-            <div>Availability: {staff.availability}</div>
-            <div>Location: {staff.location}</div>
-            <div className="flex items-center gap-2">
-              <FiPhone className="text-slate-400" /> {staff.phone}
+          <div className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-400">Contact Details</div>
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white shadow-sm text-slate-400">
+                <FiMail />
+              </div>
+              <div className="text-sm">
+                <div className="text-[10px] font-bold uppercase text-slate-400">Email Address</div>
+                <div className="font-semibold text-slate-700">{staff.email}</div>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <FiMail className="text-slate-400" /> {staff.email}
+            <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white shadow-sm text-slate-400">
+                <FiPhone />
+              </div>
+              <div className="text-sm">
+                <div className="text-[10px] font-bold uppercase text-slate-400">Phone Number</div>
+                <div className="font-semibold text-slate-700">{staff.phone || "Not provided"}</div>
+              </div>
             </div>
           </div>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-sm font-semibold text-slate-900">Bio</div>
-          <p className="mt-3 text-sm text-slate-500">{staff.bio}</p>
-          <div className="mt-4">
-            <div className="text-xs font-semibold uppercase text-slate-400">
-              Certifications
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {staff.certifications.map((cert) => (
-                <span
-                  key={cert}
-                  className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600"
-                >
-                  {cert}
-                </span>
+          <div className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-400">Branch Assignments</div>
+          {staff.branches.length > 0 ? (
+            <div className="space-y-3">
+              {staff.branches.map((assignment) => (
+                <div key={assignment.branchId} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white p-3 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <FiHome className="text-slate-400" />
+                    <span className="text-sm font-semibold text-slate-700">{assignment.branch.name}</span>
+                  </div>
+                  {assignment.isPrimary && (
+                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase text-indigo-600">
+                      Primary
+                    </span>
+                  )}
+                </div>
               ))}
             </div>
-          </div>
+          ) : (
+            <div className="flex h-24 flex-col items-center justify-center rounded-xl bg-slate-50 text-slate-400 italic">
+              <p className="text-sm">No branches assigned</p>
+            </div>
+          )}
+        </div>
+      </div>
+      
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">System Information</div>
+        <div className="mt-2 text-xs text-slate-500">
+          Member since {new Date(staff.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
         </div>
       </div>
     </div>
@@ -128,3 +183,4 @@ const StaffProfile = () => {
 };
 
 export default StaffProfile;
+

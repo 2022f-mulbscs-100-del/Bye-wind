@@ -13,6 +13,15 @@ import QuickActionsCard from "./QuickActionsCard";
 import ReviewsSection from "./ReviewsSection";
 import ReservationModal from "./ReservationModal";
 import ReviewModal from "./ReviewModal";
+import { getJson } from "@/lib/api";
+import { isSessionActive } from "@/lib/auth";
+import {
+  BackendPaymentGateway,
+  FALLBACK_PAYMENT_GATEWAYS,
+  mapGatewayToMethod,
+  mapPaymentGatewayToView,
+} from "@/lib/adapters/payment";
+import { mapDetailRestaurant, BackendRestaurantDetail } from "@/lib/adapters/restaurantDetail";
 
 type RestaurantDetailData = {
   restaurants: {
@@ -138,6 +147,89 @@ type FloorPayload = {
   floorLayouts?: Record<string, FloorPayloadLayout>;
 };
 
+type BackendFloorPlanZone = {
+  id: string;
+  name?: string | null;
+  type?: string | null;
+};
+
+type BackendFloorPlanTable = {
+  id: string;
+  tableNumber: string;
+  label?: string | null;
+  width: number;
+  height: number;
+  positionX: number;
+  positionY: number;
+  rotation: number;
+  capacity: number;
+  zone?: BackendFloorPlanZone | null;
+  shape?: string | null;
+};
+
+type BackendFloorPlan = {
+  id: string;
+  name: string;
+  canvasWidth?: number;
+  canvasHeight?: number;
+  tables: BackendFloorPlanTable[];
+  zones: BackendFloorPlanZone[];
+};
+
+const formatZoneLabel = (type?: string | null, fallback?: string | null) => {
+  if (!type && !fallback) return fallback ?? "";
+  if (!type) return fallback ?? "";
+  const normalized = type
+    .toLowerCase()
+    .split(/[^a-zA-Z]+/)
+    .filter(Boolean)
+    .map((segment) => segment[0].toUpperCase() + segment.slice(1))
+    .join(" ");
+  return normalized;
+};
+
+const normalizeShape = (shape?: string | null): FloorPayloadTable["shape"] => {
+  switch (shape) {
+    case "ROUND":
+      return "Round";
+    case "SQUARE":
+      return "Square";
+    case "RECTANGLE":
+    case "OVAL":
+    case "CUSTOM":
+      return "Rectangle";
+    default:
+      return "Rectangle";
+  }
+};
+
+const toPayloadTable = (table: BackendFloorPlanTable): FloorPayloadTable => ({
+  id: table.id,
+  name: table.label ?? table.tableNumber,
+  x: table.positionX,
+  y: table.positionY,
+  width: table.width,
+  height: table.height,
+  rotation: table.rotation,
+  seats: table.capacity,
+  zone: formatZoneLabel(table.zone?.type, table.zone?.name),
+  shape: normalizeShape(table.shape),
+});
+
+const toDetailFloorTables = (tables: FloorPayloadTable[]): FloorTable[] =>
+  tables.map((entry) => ({
+    id: entry.id,
+    x: entry.x,
+    y: entry.y,
+    w: entry.width,
+    h: entry.height,
+    label: entry.name,
+    zone: entry.zone,
+    shape: entry.shape,
+    seats: entry.seats,
+    rotation: entry.rotation,
+  }));
+
 const RestaurantDetail = () => {
   const { id } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -149,7 +241,7 @@ const RestaurantDetail = () => {
     upcoming: [],
   });
   const [loading, setLoading] = useState(true);
-  const isAuthenticated = localStorage.getItem("isAuthenticated") === "true";
+  const isAuthenticated = isSessionActive();
   const [isReservationOpen, setIsReservationOpen] = useState(false);
   const [step, setStep] = useState<"slot" | "table" | "payment" | "confirm">("slot");
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -178,6 +270,7 @@ const RestaurantDetail = () => {
     width: 1200,
     height: 700,
   });
+  const [branchIds, setBranchIds] = useState<string[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -196,6 +289,46 @@ const RestaurantDetail = () => {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!id || !isAuthenticated) return;
+    let mounted = true;
+
+    getJson<{ data: BackendRestaurantDetail }>(`/restaurants/${id}`)
+      .then((response) => {
+        if (!mounted || !response.data) return;
+        const payload = response.data;
+        const restaurantBranches = payload.branches ?? [];
+        setBranchIds(restaurantBranches.map((branch) => branch.id));
+        setData((prev) => {
+          const existing = prev.restaurants.find((item) => item.id === payload.id);
+          const mapped = mapDetailRestaurant(payload, existing);
+          const restaurants = prev.restaurants.length
+            ? prev.restaurants.map((item) => (item.id === mapped.id ? mapped : item))
+            : [mapped];
+          const detailsEntry = {
+            floorHighlights:
+              mapped.floorHighlights ?? existing?.floorHighlights ?? prev.floorHighlights,
+            floorTables:
+              mapped.floorTables ?? existing?.floorTables ?? prev.floorTables,
+            upcoming: mapped.upcoming ?? existing?.upcoming ?? prev.upcoming,
+          };
+          return {
+            ...prev,
+            restaurants,
+            detailsById: {
+              ...(prev.detailsById ?? {}),
+              [mapped.id]: detailsEntry,
+            },
+          };
+        });
+      })
+      .catch(() => null);
+
+    return () => {
+      mounted = false;
+    };
+  }, [id, isAuthenticated]);
 
   useEffect(() => {
     let mounted = true;
@@ -231,6 +364,7 @@ const RestaurantDetail = () => {
   }, [id]);
 
   useEffect(() => {
+    if (isAuthenticated) return;
     let mounted = true;
     fetch("/DummyApis/floor-management-db-payload.json")
       .then((res) => (res.ok ? res.json() : null))
@@ -256,38 +390,121 @@ const RestaurantDetail = () => {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !branchIds.length || !id) return;
+    let mounted = true;
+
+    const branchId = branchIds[0];
+    getJson<{ data: BackendFloorPlan[] }>(`/floor-plans?branchId=${branchId}`)
+      .then((response) => {
+        if (!mounted) return;
+        const plans = response.data ?? [];
+        if (!plans.length) return;
+
+        const layoutMap: Record<string, FloorPayloadLayout> = {};
+        plans.forEach((plan) => {
+          layoutMap[plan.id] = {
+            tables: plan.tables.map(toPayloadTable),
+            areas: [],
+          };
+        });
+
+        const firstPlan = plans[0];
+        const firstLayout = layoutMap[firstPlan.id];
+        if (!firstLayout) return;
+
+        const detailTables = toDetailFloorTables(firstLayout.tables ?? []);
+        const totalCapacity = firstPlan.tables.reduce((sum, table) => sum + table.capacity, 0);
+        const highlights: FloorHighlight[] = [
+          { label: "Zones", value: `${firstPlan.zones.length}` },
+          { label: "Tables", value: `${detailTables.length}` },
+          { label: "Capacity", value: `${totalCapacity} seats` },
+        ];
+
+        setDbFloors(plans.map((plan) => ({ id: plan.id, label: plan.name })));
+        setDbFloorLayouts(layoutMap);
+        setDbCanvasSize({
+          width: firstPlan.canvasWidth ?? 1200,
+          height: firstPlan.canvasHeight ?? 700,
+        });
+        setDbSelectedFloorId((prev) => prev || firstPlan.id);
+
+        setData((prev) => {
+          const updatedRestaurants = prev.restaurants.map((entry) =>
+            entry.id === id ? { ...entry, floorHighlights: highlights, floorTables: detailTables } : entry
+          );
+          const detailsEntry = {
+            floorHighlights: highlights,
+            floorTables: detailTables,
+            upcoming: prev.detailsById?.[id]?.upcoming ?? prev.upcoming,
+          };
+          return {
+            ...prev,
+            restaurants: updatedRestaurants,
+            detailsById: {
+              ...(prev.detailsById ?? {}),
+              [id]: detailsEntry,
+            },
+          };
+        });
+      })
+      .catch(() => null);
+
+    return () => {
+      mounted = false;
+    };
+  }, [isAuthenticated, branchIds, id]);
 
   useEffect(() => {
     if (!isReservationOpen) return;
     let mounted = true;
     setReservationLoading(true);
-    Promise.all([
-      fetch("/DummyApis/reservation-slots.json").then((res) =>
-        res.ok ? res.json() : null
-      ),
-      fetch("/DummyApis/reservation-tables.json").then((res) =>
-        res.ok ? res.json() : null
-      ),
-      fetch("/DummyApis/payment-methods.json").then((res) =>
-        res.ok ? res.json() : null
-      ),
-    ])
-      .then(([slotsJson, tablesJson, methodsJson]) => {
+
+    const fallbackMethods = FALLBACK_PAYMENT_GATEWAYS.map((gateway) =>
+      mapGatewayToMethod(mapPaymentGatewayToView(gateway))
+    );
+
+    const fetchData = async () => {
+      try {
+        const [slotsJson, tablesJson] = await Promise.all([
+          fetch("/DummyApis/reservation-slots.json").then((res) => (res.ok ? res.json() : null)),
+          fetch("/DummyApis/reservation-tables.json").then((res) => (res.ok ? res.json() : null)),
+        ]);
+
         if (!mounted) return;
         setSlots(slotsJson?.slots ?? []);
         setTables(tablesJson?.tables ?? []);
-        setMethods(methodsJson?.methods ?? []);
-      })
-      .catch(() => null)
-      .finally(() => {
-        if (mounted) setReservationLoading(false);
-      });
+      } catch {
+        // keep defaults
+      }
+
+      if (!mounted) return;
+      if (!isAuthenticated) {
+        setMethods(fallbackMethods);
+        return;
+      }
+
+      try {
+        const response = await getJson<{ data: BackendPaymentGateway[] }>("/payment-gateways");
+        const list = (response.data ?? FALLBACK_PAYMENT_GATEWAYS).map((gateway) =>
+          mapGatewayToMethod(mapPaymentGatewayToView(gateway))
+        );
+        if (mounted) setMethods(list);
+      } catch {
+        if (mounted) setMethods(fallbackMethods);
+      }
+    };
+
+    void fetchData().finally(() => {
+      if (mounted) setReservationLoading(false);
+    });
 
     return () => {
       mounted = false;
     };
-  }, [isReservationOpen]);
+  }, [isReservationOpen, isAuthenticated]);
 
   const restaurant = data.restaurants.find((item) => item.id === id);
   const restaurantDetails =

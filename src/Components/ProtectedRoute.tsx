@@ -1,4 +1,5 @@
 import { Navigate, Outlet } from "react-router-dom";
+import { getStoredRole, isSessionActive } from "@/lib/auth";
 
 type ProtectedRouteProps = {
   allow: Array<"admin" | "super-admin" | "user">;
@@ -6,12 +7,8 @@ type ProtectedRouteProps = {
 };
 
 const ProtectedRoute = ({ allow, redirectTo = "/login" }: ProtectedRouteProps) => {
-  const isAuthenticated = localStorage.getItem("isAuthenticated") === "true";
-  const role = localStorage.getItem("auth_role") as
-    | "admin"
-    | "super-admin"
-    | "user"
-    | null;
+  const isAuthenticated = isSessionActive();
+  const role = getStoredRole();
 
   if (!isAuthenticated) {
     return <Navigate to={redirectTo} replace />;

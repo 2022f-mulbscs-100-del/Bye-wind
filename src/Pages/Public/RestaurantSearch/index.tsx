@@ -2,6 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import PublicNavbar from "../../../Components/Public/PublicNavbar";
 import type { RestaurantsData } from "../Restaurants/types";
+import { getJson } from "@/lib/api";
+import type { BackendRestaurant } from "@/lib/adapters/restaurants";
+import { mapRestaurant, buildFilters, buildFeaturedAreas } from "@/lib/adapters/restaurants";
+import { isSessionActive } from "@/lib/auth";
 
 const RestaurantSearch = () => {
   const [searchParams] = useSearchParams();
@@ -18,14 +22,45 @@ const RestaurantSearch = () => {
 
   useEffect(() => {
     let mounted = true;
+    setLoading(true);
 
-    fetch("/DummyApis/restaurants.json")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((restaurantsJson) => {
-        if (!mounted || !restaurantsJson) return;
-        setData(restaurantsJson);
+    const loadDummy = () => {
+      return fetch("/DummyApis/restaurants.json")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((restaurantsJson) => {
+          if (!mounted || !restaurantsJson) return;
+          setData(restaurantsJson);
+        })
+        .catch(() => null);
+    };
+
+    if (!isSessionActive()) {
+      loadDummy().finally(() => {
+        if (mounted) setLoading(false);
+      });
+      return () => {
+        mounted = false;
+      };
+    }
+
+    const params = query ? `?search=${encodeURIComponent(query.trim())}` : "";
+    getJson<{ data: BackendRestaurant[] }>(`/restaurants${params}`)
+      .then((response) => {
+        if (!mounted) return;
+        const restaurants = (response.data ?? []).map(mapRestaurant);
+        setData({
+          restaurants,
+          filters: buildFilters(restaurants),
+          featuredAreas: buildFeaturedAreas(restaurants),
+        });
       })
-      .catch(() => null)
+      .catch(() => {
+        if (mounted) {
+          loadDummy().finally(() => {
+            if (mounted) setLoading(false);
+          });
+        }
+      })
       .finally(() => {
         if (mounted) setLoading(false);
       });
@@ -33,7 +68,7 @@ const RestaurantSearch = () => {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [query]);
 
   const cuisines = useMemo(() => {
     const unique = new Set(data.restaurants.map((item) => item.cuisine));

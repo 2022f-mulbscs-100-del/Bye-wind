@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { FiAlertTriangle, FiCheckCircle, FiPlus, FiSearch } from "react-icons/fi";
+import { getJson, putJson } from "@/lib/api";
+import { isSessionActive } from "@/lib/auth";
+import type { BackendRestaurant } from "@/lib/adapters/restaurants";
 
 type Tenant = {
+  id: string;
   name: string;
   outlets: number;
   status: "Active" | "Suspended" | "Pending";
@@ -40,6 +44,43 @@ const emptyTenant: Tenant = {
   plan: "Starter",
 };
 
+const backendToTenantStatus = (status?: BackendRestaurant["status"]): Tenant["status"] => {
+  if (status === "SUSPENDED") return "Suspended";
+  if (status === "PENDING_REVIEW") return "Pending";
+  if (status === "LIVE") return "Active";
+  return "Active";
+};
+
+const mapTenantStatusToBackendStatus: Record<Tenant["status"], BackendRestaurant["status"]> = {
+  Active: "LIVE",
+  Suspended: "SUSPENDED",
+  Pending: "PENDING_REVIEW",
+};
+
+const mapTenant = (restaurant: BackendRestaurant): Tenant => {
+  const status = backendToTenantStatus(restaurant.status);
+  return {
+    id: restaurant.id,
+    name: restaurant.brandName ?? restaurant.legalBusinessName ?? "Restaurant",
+    outlets: restaurant._count?.branches ?? restaurant.branches?.length ?? 0,
+    status,
+    region: restaurant.operatingCountry ?? "Global",
+    plan: restaurant.planTier ?? "Starter",
+  };
+};
+
+const computeStats = (tenants: Tenant[]) => {
+  return tenants.reduce(
+    (acc, tenant) => {
+      if (tenant.status === "Active") acc.active += 1;
+      if (tenant.status === "Suspended") acc.suspended += 1;
+      if (tenant.status === "Pending") acc.pending += 1;
+      return acc;
+    },
+    { active: 0, suspended: 0, pending: 0 }
+  );
+};
+
 const TenantManagement = () => {
   const [data, setData] = useState<TenantManagementData>(defaultData);
   const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -47,19 +88,47 @@ const TenantManagement = () => {
   const [search, setSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingTenantName, setEditingTenantName] = useState<string | null>(null);
+  const [editingTenantId, setEditingTenantId] = useState<string | null>(null);
   const [draftTenant, setDraftTenant] = useState<Tenant>(emptyTenant);
   const [formError, setFormError] = useState("");
 
   useEffect(() => {
     let mounted = true;
-    fetch("/DummyApis/tenant-management.json")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (!mounted || !json) return;
-        setData(json);
-        setTenants(json.tenants ?? []);
+    const loadDummy = () => {
+      return fetch("/DummyApis/tenant-management.json")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((json) => {
+          if (!mounted || !json) return;
+          setData(json);
+          setTenants(json.tenants ?? []);
+        })
+        .catch(() => null);
+    };
+
+    if (!isSessionActive()) {
+      loadDummy().finally(() => {
+        if (mounted) setLoading(false);
+      });
+      return () => {
+        mounted = false;
+      };
+    }
+
+    getJson<{ data: BackendRestaurant[] }>("/restaurants")
+      .then((response) => {
+        if (!mounted) return;
+        const list = (response.data ?? []).map(mapTenant);
+        setTenants(list);
+        setData({
+          tenants: list,
+          stats: computeStats(list),
+          alerts: { count: 0, message: "No alerts." },
+          compliance: { message: "No compliance updates." },
+        });
       })
-      .catch(() => null)
+      .catch(() => {
+        if (mounted) loadDummy();
+      })
       .finally(() => {
         if (mounted) setLoading(false);
       });
@@ -96,6 +165,7 @@ const TenantManagement = () => {
   const openCreateModal = () => {
     setDraftTenant(emptyTenant);
     setEditingTenantName(null);
+    setEditingTenantId(null);
     setFormError("");
     setIsCreateOpen(true);
   };
@@ -103,6 +173,7 @@ const TenantManagement = () => {
   const openManageModal = (tenant: Tenant) => {
     setDraftTenant({ ...tenant });
     setEditingTenantName(tenant.name);
+    setEditingTenantId(tenant.id);
     setFormError("");
     setIsCreateOpen(true);
   };
@@ -110,10 +181,11 @@ const TenantManagement = () => {
   const closeModal = () => {
     setIsCreateOpen(false);
     setEditingTenantName(null);
+    setEditingTenantId(null);
     setFormError("");
   };
 
-  const saveTenant = () => {
+  const saveTenant = async () => {
     const normalized: Tenant = {
       ...draftTenant,
       name: draftTenant.name.trim(),
@@ -130,20 +202,40 @@ const TenantManagement = () => {
     const duplicate = tenants.some(
       (tenant) =>
         tenant.name.toLowerCase() === normalized.name.toLowerCase() &&
-        tenant.name !== editingTenantName
+        tenant.id !== editingTenantId
     );
     if (duplicate) {
       setFormError("Tenant with this name already exists.");
       return;
     }
 
-    if (editingTenantName) {
-      setTenants((prev) =>
-        prev.map((tenant) => (tenant.name === editingTenantName ? normalized : tenant))
-      );
-    } else {
-      setTenants((prev) => [normalized, ...prev]);
+    if (editingTenantId) {
+      try {
+        const response = await putJson<{ data: BackendRestaurant }>(
+          `/restaurants/${editingTenantId}`,
+          {
+            brandName: normalized.name,
+            legalBusinessName: normalized.name,
+            operatingCountry: normalized.region,
+            status: mapTenantStatusToBackendStatus[normalized.status],
+          },
+          {
+            headers: {
+              "x-restaurant-id": editingTenantId,
+            },
+          }
+        );
+        const updatedTenant = mapTenant(response.data);
+        setTenants((prev) => prev.map((tenant) => (tenant.id === updatedTenant.id ? updatedTenant : tenant)));
+        closeModal();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to save tenant";
+        setFormError(message);
+      }
+      return;
     }
+
+    setTenants((prev) => [normalized, ...prev]);
     closeModal();
   };
 
@@ -290,21 +382,15 @@ const TenantManagement = () => {
               />
               <input
                 value={draftTenant.plan}
-                onChange={(event) =>
-                  setDraftTenant((prev) => ({ ...prev, plan: event.target.value }))
-                }
-                placeholder="Plan"
-                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                readOnly
+                className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-700"
               />
               <input
                 type="number"
                 min={1}
                 value={draftTenant.outlets}
-                onChange={(event) =>
-                  setDraftTenant((prev) => ({ ...prev, outlets: Number(event.target.value) }))
-                }
-                placeholder="Outlets"
-                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                readOnly
+                className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-700"
               />
               <input
                 value={draftTenant.region}

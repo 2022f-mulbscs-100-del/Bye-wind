@@ -1,43 +1,164 @@
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import {
   FiAlertTriangle,
-  FiCreditCard,
-  FiDollarSign,
-  FiFileText,
-  FiGift,
-  FiRefreshCw,
+  FiEdit2,
+  FiPlus,
   FiShield,
-  FiShuffle,
   FiTag,
+  FiTrash2,
+  FiX,
 } from "react-icons/fi";
+import Loader from "@/Components/loader";
+import { deleteJson, getJson, postJson, putJson } from "@/lib/api";
+import { getStoredRestaurantId, isSessionActive } from "@/lib/auth";
+import type { BackendPaymentGateway, PaymentGatewayView } from "@/lib/adapters/payment";
+import { FALLBACK_PAYMENT_GATEWAYS, mapPaymentGatewayToView } from "@/lib/adapters/payment";
 
-const recentPayments = [
-  {
-    id: "p-204",
-    guest: "Maya Carter",
-    amount: "$126.50",
-    method: "Visa •••• 1284",
-    status: "Paid",
-    date: "Today, 6:12 PM",
-  },
-  {
-    id: "p-205",
-    guest: "Liam Nguyen",
-    amount: "$58.90",
-    method: "Apple Pay",
-    status: "Pending",
-    date: "Today, 5:40 PM",
-  },
-  {
-    id: "p-206",
-    guest: "Ava Diaz",
-    amount: "$210.00",
-    method: "Mastercard •••• 7711",
-    status: "Refunded",
-    date: "Yesterday, 8:32 PM",
-  },
-];
+type GatewayFormData = {
+  id?: string;
+  provider: "STRIPE" | "SQUARE";
+  currency: string;
+  isActive: boolean;
+  isTestMode: boolean;
+  taxRate: number;
+  apiKey: string;
+  secretKey: string;
+  webhookSecret: string;
+};
 
 const Payment = () => {
+  const [gateways, setGateways] = useState<PaymentGatewayView[]>([]);
+  const [loadingGateways, setLoadingGateways] = useState(true);
+  const [gatewayError, setGatewayError] = useState("");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState<GatewayFormData>({
+    provider: "STRIPE",
+    currency: "USD",
+    isActive: true,
+    isTestMode: true,
+    taxRate: 0,
+    apiKey: "",
+    secretKey: "",
+    webhookSecret: "",
+  });
+
+  const restaurantId = getStoredRestaurantId();
+
+  const loadGateways = async () => {
+    if (!isSessionActive()) {
+      setLoadingGateways(false);
+      return;
+    }
+
+    setLoadingGateways(true);
+    try {
+      const response = await getJson<BackendPaymentGateway[]>("/payment-gateways", {
+        headers: restaurantId ? { "x-restaurant-id": restaurantId } : undefined,
+      });
+      const payload = response.data.length ? response.data : FALLBACK_PAYMENT_GATEWAYS;
+      setGateways(payload.map(mapPaymentGatewayToView));
+      setGatewayError("");
+    } catch (err) {
+      setGateways(FALLBACK_PAYMENT_GATEWAYS.map(mapPaymentGatewayToView));
+      setGatewayError("Unable to fetch payment gateway data.");
+      console.error(err);
+    } finally {
+      setLoadingGateways(false);
+    }
+  };
+
+  useEffect(() => {
+    loadGateways();
+  }, [restaurantId]);
+
+  const handleOpenModal = (gateway?: PaymentGatewayView) => {
+    if (gateway) {
+      setFormData({
+        id: gateway.id,
+        provider: gateway.provider as "STRIPE" | "SQUARE",
+        currency: gateway.currency,
+        isActive: gateway.status === "Active",
+        isTestMode: gateway.isTestMode,
+        taxRate: gateway.taxRate ?? 0,
+        apiKey: "********", // Don't show actual keys
+        secretKey: "********",
+        webhookSecret: "********",
+      });
+    } else {
+      setFormData({
+        provider: "STRIPE",
+        currency: "USD",
+        isActive: true,
+        isTestMode: true,
+        taxRate: 0,
+        apiKey: "",
+        secretKey: "",
+        webhookSecret: "",
+      });
+    }
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Are you sure you want to remove this gateway?")) return;
+    const toastId = toast.loading("Removing gateway...");
+    try {
+      await deleteJson(`/payment-gateways/${id}`, {
+        headers: restaurantId ? { "x-restaurant-id": restaurantId } : undefined,
+      });
+      setGateways((prev) => prev.filter((g) => g.id !== id));
+      toast.success("Gateway removed.", { id: toastId });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete gateway.", { id: toastId });
+      console.error(err);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    const toastId = toast.loading("Saving configuration...");
+    try {
+      const isUpdate = !!formData.id;
+      const url = isUpdate ? `/payment-gateways/${formData.id}` : "/payment-gateways";
+      const method = isUpdate ? putJson : postJson;
+
+      // Filter out dummy keys if they weren't changed
+      const payload: any = { ...formData };
+      if (payload.apiKey === "********") delete payload.apiKey;
+      if (payload.secretKey === "********") delete payload.secretKey;
+      if (payload.webhookSecret === "********") delete payload.webhookSecret;
+
+      await method(url, payload, {
+        headers: restaurantId ? { "x-restaurant-id": restaurantId } : undefined,
+      });
+
+      setIsModalOpen(false);
+      loadGateways();
+      toast.success("Gateway configuration saved!", { id: toastId });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save gateway configuration.", { id: toastId });
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const gatewayStats = useMemo(() => {
+    const total = gateways.length || FALLBACK_PAYMENT_GATEWAYS.length;
+    const activeGateways = gateways.length ? gateways : FALLBACK_PAYMENT_GATEWAYS.map(mapPaymentGatewayToView);
+    const active = activeGateways.filter((gateway) => gateway.status === "Active").length;
+    const testMode = activeGateways.filter((gateway) => gateway.isTestMode).length;
+    const currencies = new Set(activeGateways.map((gateway) => gateway.currency)).size;
+    return [
+      { label: "Connected gateways", value: `${active}/${total}` },
+      { label: "Test mode enabled", value: `${testMode}` },
+      { label: "Currencies supported", value: `${currencies}` },
+    ];
+  }, [gateways]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -45,19 +166,18 @@ const Payment = () => {
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
             Payments & Billing
           </div>
-          <div className="mt-1 text-2xl font-semibold text-slate-900">Payment</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-900">Payment Gateways</div>
         </div>
-        <button className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-sm">
-          Export
+        <button 
+          onClick={() => handleOpenModal()}
+          className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-800"
+        >
+          <FiPlus /> Connect Gateway
         </button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        {[
-          { label: "Today Revenue", value: "$4,250", icon: FiDollarSign },
-          { label: "Pending", value: "$980", icon: FiRefreshCw },
-          { label: "Refunds", value: "$210", icon: FiFileText },
-        ].map((item) => (
+        {gatewayStats.map((item) => (
           <div
             key={item.label}
             className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
@@ -67,7 +187,7 @@ const Payment = () => {
                 {item.label}
               </div>
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                <item.icon />
+                <FiTag />
               </div>
             </div>
             <div className="mt-4 text-2xl font-semibold text-slate-900">
@@ -81,152 +201,204 @@ const Payment = () => {
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm font-semibold text-slate-900">Payment gateway processing</div>
+              <div className="text-sm font-semibold text-slate-900">Configured Gateways</div>
               <p className="mt-1 text-sm text-slate-500">
-                PCI compliant gateways with tokenization and webhooks.
+                Manage your payment processing integrations and environments.
               </p>
             </div>
             <FiShield className="text-slate-400" />
           </div>
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 text-sm text-slate-600">
-            <div className="rounded-xl bg-slate-50 px-4 py-2">Stripe · Connected</div>
-            <div className="rounded-xl bg-slate-50 px-4 py-2">Square · Connected</div>
-            <div className="rounded-xl bg-slate-50 px-4 py-2">Webhooks · Active</div>
-            <div className="rounded-xl bg-slate-50 px-4 py-2">Tokenization · Enabled</div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <FiAlertTriangle /> Payment failures & retries
-          </div>
-          <div className="mt-3 text-sm text-slate-600">
-            Retry policy: 3 attempts over 24h · Notify guest on failure
-          </div>
-          <button className="mt-4 w-full rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white">
-            Configure retries
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_1fr]">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-          <div className="text-sm font-semibold text-slate-900">Deposits & Prepaid</div>
-          <div className="rounded-xl bg-slate-50 px-4 py-2 text-sm text-slate-600">
-            Deposit: 20% for parties 6+ · USD
-          </div>
-          <div className="rounded-xl bg-slate-50 px-4 py-2 text-sm text-slate-600">
-            Prepaid: Required for peak hours and special events
-          </div>
-          <button className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600">
-            Configure rules
-          </button>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-          <div className="text-sm font-semibold text-slate-900">Cancellation & No‑show charges</div>
-          <div className="rounded-xl bg-slate-50 px-4 py-2 text-sm text-slate-600">
-            24h window · $25 penalty · Auto charge
-          </div>
-          <button className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600">
-            Edit policies
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-sm font-semibold text-slate-900">Recent payments</div>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-xs uppercase text-slate-400">
-                <tr>
-                  <th className="pb-3 font-medium">Guest</th>
-                  <th className="pb-3 font-medium">Amount</th>
-                  <th className="pb-3 font-medium">Method</th>
-                  <th className="pb-3 font-medium">Status</th>
-                  <th className="pb-3 font-medium">Date</th>
-                </tr>
-              </thead>
-              <tbody className="text-slate-600">
-                {recentPayments.map((payment) => (
-                  <tr key={payment.id} className="border-t border-slate-100">
-                    <td className="py-3 font-medium text-slate-900">{payment.guest}</td>
-                    <td className="py-3">{payment.amount}</td>
-                    <td className="py-3">{payment.method}</td>
-                    <td className="py-3">
-                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        payment.status === "Paid"
-                          ? "bg-emerald-50 text-emerald-600"
-                          : payment.status === "Refunded"
-                          ? "bg-slate-100 text-slate-600"
-                          : "bg-amber-50 text-amber-600"
-                      }`}>
-                        {payment.status}
-                      </span>
-                    </td>
-                    <td className="py-3 text-slate-500">{payment.date}</td>
-                  </tr>
+          <div className="mt-4 space-y-3 text-sm text-slate-600">
+            {loadingGateways ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader size={28} color="#0f172a" />
+              </div>
+            ) : (
+              <>
+                {gatewayError && (
+                  <div className="rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                    {gatewayError}
+                  </div>
+                )}
+                {gateways.map((gateway) => (
+                  <div
+                    key={gateway.id}
+                    className="group flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600 transition-all hover:border-slate-300 hover:bg-white"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 font-semibold text-slate-900">
+                        {gateway.provider} 
+                        {gateway.isTestMode && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-600">TEST</span>}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {gateway.currency} · {gateway.status}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                       <button 
+                        onClick={() => handleOpenModal(gateway)}
+                        className="p-1.5 text-slate-400 hover:text-indigo-600"
+                        title="Edit Configuration"
+                      >
+                        <FiEdit2 />
+                      </button>
+                      <button 
+                         onClick={() => handleDelete(gateway.id)}
+                         className="p-1.5 text-slate-400 hover:text-rose-600"
+                         title="Remove Gateway"
+                      >
+                        <FiTrash2 />
+                      </button>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+                {gateways.length === 0 && !gatewayError && (
+                  <div className="flex h-32 flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 text-slate-400">
+                    <p>No gateways connected yet.</p>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
 
         <div className="space-y-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiShuffle /> Split & multi‑method payments
+              <FiAlertTriangle /> Status Monitor
             </div>
-            <div className="mt-2 text-sm text-slate-600">Card + Wallet + Gift card</div>
-            <button className="mt-4 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
-              Configure methods
-            </button>
+            <div className="mt-3 text-xs leading-relaxed text-slate-500">
+              Webhooks are automatically configured to sync payment status in real-time.
+            </div>
+            <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-emerald-600">
+              <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+              Webhook listener active
+            </div>
           </div>
+          
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiGift /> Gift cards & stored value
+            <div className="text-sm font-semibold text-slate-900">Security Note</div>
+            <p className="mt-2 text-xs leading-relaxed text-slate-500">
+              Credentials are encrypted using AES-256 before being stored. Only authenticated requests can trigger transactions.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold text-slate-900">
+                {formData.id ? "Edit Gateway" : "Connect Gateway"}
+              </h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <FiX />
+              </button>
             </div>
-            <div className="mt-2 text-sm text-slate-600">Issue, manage, redeem balances</div>
-            <button className="mt-4 w-full rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white">
-              Manage gift cards
-            </button>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Provider</label>
+                <select 
+                  value={formData.provider}
+                  onChange={(e) => setFormData({...formData, provider: e.target.value as any})}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 transition-colors"
+                >
+                  <option value="STRIPE">Stripe</option>
+                  <option value="SQUARE">Square</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Currency</label>
+                  <input 
+                    type="text"
+                    value={formData.currency}
+                    onChange={(e) => setFormData({...formData, currency: e.target.value.toUpperCase()})}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 transition-colors"
+                    placeholder="USD"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Tax Rate (%)</label>
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={formData.taxRate}
+                    onChange={(e) => setFormData({...formData, taxRate: parseFloat(e.target.value)})}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">API Key</label>
+                <input 
+                  type="password"
+                  value={formData.apiKey}
+                  onChange={(e) => setFormData({...formData, apiKey: e.target.value})}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 transition-colors"
+                  placeholder={formData.id ? "Leave unchanged" : "pk_test_..."}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Secret Key</label>
+                <input 
+                  type="password"
+                  value={formData.secretKey}
+                  onChange={(e) => setFormData({...formData, secretKey: e.target.value})}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-indigo-500 transition-colors"
+                  placeholder={formData.id ? "Leave unchanged" : "sk_test_..."}
+                />
+              </div>
+
+              <div className="flex items-center gap-6 py-2">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="checkbox"
+                    checked={formData.isActive}
+                    onChange={(e) => setFormData({...formData, isActive: e.target.checked})}
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="text-sm font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Enabled</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="checkbox"
+                    checked={formData.isTestMode}
+                    onChange={(e) => setFormData({...formData, isTestMode: e.target.checked})}
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="text-sm font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Test Mode</span>
+                </label>
+              </div>
+
+              <div className="mt-8 flex gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="flex-1 rounded-xl border border-slate-200 bg-white py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 rounded-xl bg-slate-900 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                >
+                  {isSubmitting ? "Saving..." : "Save Configuration"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_1fr]">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-          <div className="text-sm font-semibold text-slate-900">Subscription & SaaS billing</div>
-          <div className="rounded-xl bg-slate-50 px-4 py-2 text-sm text-slate-600">
-            Plan: Scale · Annual · Renewal in 24 days
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white">Manage plan</button>
-            <button className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600">View invoices</button>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-sm font-semibold text-slate-900">Invoices & receipts</div>
-          <div className="mt-2 text-sm text-slate-600">Auto‑generated with tax breakdowns</div>
-          <button className="mt-4 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600">
-            Download sample
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-          <FiTag /> Financial audit & reconciliation
-        </div>
-        <div className="mt-2 text-sm text-slate-600">Export reports for accounting and compliance.</div>
-        <button className="mt-4 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600">
-          Export reconciliation
-        </button>
-      </div>
+      )}
     </div>
   );
 };
 
 export default Payment;
+

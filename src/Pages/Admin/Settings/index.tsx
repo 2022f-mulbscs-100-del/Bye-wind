@@ -1,85 +1,117 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { getJson, putJson, postJson } from "@/lib/api";
+import { getStoredRestaurantId } from "@/lib/auth";
+import { useBranchContext } from "@/context/BranchContext";
 import {
-  FiCalendar,
-  FiCloud,
   FiCreditCard,
-  FiDatabase,
   FiGlobe,
-  FiLink,
   FiMail,
-  FiShield,
-  FiSliders,
-  FiTag,
+  FiMessageSquare,
+  FiSmartphone,
+  FiZap,
 } from "react-icons/fi";
 
 const tabs = [
   { id: "ops", label: "Operations" },
   { id: "integrations", label: "Integrations" },
-  { id: "compliance", label: "Compliance" },
+  { id: "compliance", label: "Branding & Audit" },
 ] as const;
+
+type AuditLogEntry = {
+  id: string;
+  action: string;
+  entity: string;
+  createdAt: string;
+  staff?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+  };
+};
+
+type Severity = "Low" | "Medium" | "High";
+
+const severityClassMap: Record<Severity, string> = {
+  High: "bg-rose-50 text-rose-600",
+  Medium: "bg-amber-50 text-amber-600",
+  Low: "bg-slate-100 text-slate-600",
+};
+
+const severityByAction = (action: string): Severity => {
+  const normalized = action.toUpperCase();
+  if (["DELETE", "STATUS_CHANGE", "EXPORT"].includes(normalized)) return "High";
+  if (["UPDATE", "CREATE"].includes(normalized)) return "Medium";
+  return "Low";
+};
+
+const formatRelativeTime = (value: string) => {
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return "just now";
+  const diff = Date.now() - timestamp;
+  if (diff < 60_000) return "just now";
+  const minutes = Math.round(diff / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+};
+
+const getActorName = (entry: AuditLogEntry) => {
+  const { staff } = entry;
+  if (!staff) return "System";
+  const name = [staff.firstName, staff.lastName].filter(Boolean).join(" ");
+  if (name) return name;
+  return staff.email ?? "System";
+};
 
 type TabId = (typeof tabs)[number]["id"];
 
 type SettingsState = {
+  branding: {
+    logoUrl: string;
+    faviconUrl: string;
+    primaryColor: string;
+    secondaryColor: string;
+    accentColor: string;
+    fontFamily: string;
+  };
+  integrations: {
+    stripeId?: string;
+    stripeKey: string;
+    stripeSecret: string;
+    stripeWebhook: string;
+    smsId?: string;
+    smsProvider: string;
+    smsKey: string;
+    whatsappId?: string;
+    whatsappProvider: string;
+    whatsappKey: string;
+    emailId?: string;
+    emailProvider: string;
+    emailKey: string;
+    posId?: string;
+    posProvider: string;
+    posKey: string;
+  };
   ops: {
     businessHours: Array<{ day: string; open: string; close: string; closed: boolean }>;
     holidays: string[];
-    reservationPolicy: {
-      maxPartySize: number;
-      advanceBookingDays: number;
-      sameDayCutoff: string;
-      cancellationWindowHours: number;
-    };
-    turnTime: {
-      weekdayMinutes: number;
-      weekendMinutes: number;
-      largePartySize: number;
-      extraMinutesForLargeParty: number;
-      customRules: string[];
-    };
-    tableConfig: {
-      minPartySize: number;
-      maxPartySize: number;
-      combinableTables: number;
-      vipEnabled: boolean;
-    };
   };
-  integrations: {
-    paymentGateway: {
-      provider: string;
-      apiKey: string;
-      webhookEnabled: boolean;
-    };
-    communication: {
-      smsApiKey: string;
-      whatsappApiKey: string;
-      emailProvider: string;
-    };
-    pos: {
-      provider: string;
-      locationId: string;
-      autoSync: boolean;
-    };
-    dataImport: {
-      defaultFormat: string;
-      strictValidation: boolean;
-    };
-    widget: {
-      language: string;
-      timezone: string;
-      minPartySize: number;
-      maxPartySize: number;
-    };
+  reservationPolicy: {
+    minPartySize: number;
+    maxPartySize: number;
+    advanceBookingDays: number;
+    sameDayCutoffMins: number;
+    cancellationWindowHours: number;
+    autoConfirm: boolean;
+  };
+  turnTime: {
+    defaultDuration: number;
+    rules: Array<{ partySize: string; duration: number }>;
   };
   compliance: {
-    branding: {
-      logoUrl: string;
-      primaryColor: string;
-    };
-    audit: {
-      retentionDays: number;
-      alertEmail: string;
-    };
     goLiveChecklist: {
       hoursConfigured: boolean;
       tablesConfigured: boolean;
@@ -89,19 +121,33 @@ type SettingsState = {
   };
 };
 
-const STORAGE_KEY = "admin_settings_v1";
-
-const getStoredSettings = (): SettingsState | null => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as SettingsState;
-  } catch {
-    return null;
-  }
-};
-
 const DEFAULT_SETTINGS: SettingsState = {
+  branding: {
+    logoUrl: "",
+    faviconUrl: "",
+    primaryColor: "#000000",
+    secondaryColor: "#FFFFFF",
+    accentColor: "#FF5733",
+    fontFamily: "Inter",
+  },
+  integrations: {
+    stripeId: undefined,
+    stripeKey: "",
+    stripeSecret: "",
+    stripeWebhook: "",
+    smsId: undefined,
+    smsProvider: "",
+    smsKey: "",
+    whatsappId: undefined,
+    whatsappProvider: "",
+    whatsappKey: "",
+    emailId: undefined,
+    emailProvider: "",
+    emailKey: "",
+    posId: undefined,
+    posProvider: "",
+    posKey: "",
+  },
   ops: {
     businessHours: [
       { day: "Mon", open: "10:00", close: "22:00", closed: false },
@@ -113,820 +159,576 @@ const DEFAULT_SETTINGS: SettingsState = {
       { day: "Sun", open: "10:00", close: "22:00", closed: false },
     ],
     holidays: [],
-    reservationPolicy: {
-      maxPartySize: 10,
-      advanceBookingDays: 30,
-      sameDayCutoff: "18:00",
-      cancellationWindowHours: 12,
-    },
-    turnTime: {
-      weekdayMinutes: 90,
-      weekendMinutes: 120,
-      largePartySize: 6,
-      extraMinutesForLargeParty: 20,
-      customRules: [],
-    },
-    tableConfig: {
-      minPartySize: 1,
-      maxPartySize: 10,
-      combinableTables: 4,
-      vipEnabled: true,
-    },
   },
-  integrations: {
-    paymentGateway: {
-      provider: "Stripe",
-      apiKey: "",
-      webhookEnabled: false,
-    },
-    communication: {
-      smsApiKey: "",
-      whatsappApiKey: "",
-      emailProvider: "SendGrid",
-    },
-    pos: {
-      provider: "Square",
-      locationId: "",
-      autoSync: true,
-    },
-    dataImport: {
-      defaultFormat: "CSV",
-      strictValidation: true,
-    },
-    widget: {
-      language: "English",
-      timezone: "America/Los_Angeles",
-      minPartySize: 1,
-      maxPartySize: 10,
-    },
+  reservationPolicy: {
+    minPartySize: 1,
+    maxPartySize: 20,
+    advanceBookingDays: 30,
+    sameDayCutoffMins: 60,
+    cancellationWindowHours: 24,
+    autoConfirm: true,
+  },
+  turnTime: {
+    defaultDuration: 90,
+    rules: [],
   },
   compliance: {
-    branding: {
-      logoUrl: "",
-      primaryColor: "#0f172a",
-    },
-    audit: {
-      retentionDays: 365,
-      alertEmail: "",
-    },
     goLiveChecklist: {
-      hoursConfigured: true,
-      tablesConfigured: true,
+      hoursConfigured: false,
+      tablesConfigured: false,
       paymentsConfigured: false,
-      policiesConfigured: true,
+      policiesConfigured: false,
     },
   },
 };
 
 const Settings = () => {
-  const [activeTab, setActiveTab] = useState<TabId>("ops");
-  const [settings, setSettings] = useState<SettingsState>(() => getStoredSettings() ?? DEFAULT_SETTINGS);
-  const [baselineSnapshot, setBaselineSnapshot] = useState<string>(
-    JSON.stringify(getStoredSettings() ?? DEFAULT_SETTINGS)
-  );
+  const { selectedBranchId } = useBranchContext();
+  const restaurantId = getStoredRestaurantId();
+
+  const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const [logs, setLogs] = useState<AuditLogEntry[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+
+  const [activeTab, setActiveTab] = useState<TabId>(selectedBranchId ? "ops" : "integrations");
   const [holidayDraft, setHolidayDraft] = useState("");
-  const [ruleDraft, setRuleDraft] = useState("");
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [baselineSnapshot, setBaselineSnapshot] = useState<string>(
+    JSON.stringify(DEFAULT_SETTINGS)
+  );
 
   const snapshot = useMemo(() => JSON.stringify(settings), [settings]);
   const hasChanges = snapshot !== baselineSnapshot;
 
-  const saveSettings = () => {
+  // Unified Fetching
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!restaurantId) return;
+      setIsLoading(true);
+      try {
+        const globalPromises = [
+          getJson<any>("/branding"),
+          getJson<any>("/payment-gateways"),
+          getJson<any>("/communication-channels"),
+          getJson<any>("/pos-integrations"),
+          getJson<any>(`/go-live/${restaurantId}`),
+        ];
+        
+        const branchPromises = selectedBranchId ? [
+          getJson<any>(`/business-hours?branchId=${selectedBranchId}`),
+          getJson<any>(`/reservation-policies?branchId=${selectedBranchId}`),
+          getJson<any>(`/turn-times?branchId=${selectedBranchId}`),
+          getJson<any>(`/business-hours/holidays?branchId=${selectedBranchId}`),
+        ] : [];
+
+        const responses = await Promise.all([...globalPromises, ...branchPromises]);
+        
+        const [brandingRes, paymentRes, commsRes, posRes, goLiveRes] = responses.slice(0, 5);
+        const branchRes = responses.slice(5);
+
+        const branding = brandingRes.data || {};
+        const payments = paymentRes.data?.[0] || {};
+        const comms = commsRes.data || [];
+        const pos = posRes.data?.[0] || {};
+        const goLive = goLiveRes.data || {};
+
+        const sms = comms.find((c: any) => c.channel === 'SMS') || {};
+        const whatsapp = comms.find((c: any) => c.channel === 'WHATSAPP') || {};
+        const email = comms.find((c: any) => c.channel === 'EMAIL') || {};
+
+        let newSettings = {
+          ...DEFAULT_SETTINGS,
+          branding: {
+            logoUrl: branding.logoUrl || "",
+            faviconUrl: branding.faviconUrl || "",
+            primaryColor: branding.primaryColor || "#000000",
+            secondaryColor: branding.secondaryColor || "#FFFFFF",
+            accentColor: branding.accentColor || "#FF5733",
+            fontFamily: branding.fontFamily || "Inter",
+          },
+          integrations: {
+            stripeId: payments.id,
+            stripeKey: payments.apiKey || "",
+            stripeSecret: payments.secretKey || "",
+            stripeWebhook: payments.webhookSecret || "",
+            smsId: sms.id,
+            smsProvider: sms.provider || "",
+            smsKey: sms.apiKey || "",
+            whatsappId: whatsapp.id,
+            whatsappProvider: whatsapp.provider || "",
+            whatsappKey: whatsapp.apiKey || "",
+            emailId: email.id,
+            emailProvider: email.provider || "",
+            emailKey: email.apiKey || "",
+            posId: pos.id,
+            posProvider: pos.provider || "",
+            posKey: pos.apiKey || "",
+          },
+          compliance: {
+            goLiveChecklist: {
+              hoursConfigured: goLive.hoursConfigured || false,
+              tablesConfigured: goLive.tablesConfigured || false,
+              paymentsConfigured: goLive.paymentsConfigured || false,
+              policiesConfigured: goLive.policiesConfigured || false,
+            }
+          }
+        };
+
+        if (selectedBranchId && branchRes.length > 0) {
+          const [hoursRes, policyRes, turnRes, holidayRes] = branchRes;
+          const hours = hoursRes.data || [];
+          const policy = policyRes.data || {};
+          const turns = turnRes.data || [];
+          const defaultTurn = turns.find((t: any) => t.isDefault);
+
+          newSettings = {
+            ...newSettings,
+            ops: {
+              businessHours: hours.length > 0 ? hours.map((h: any) => ({
+                day: h.dayOfWeek,
+                open: h.openTime,
+                close: h.closeTime,
+                closed: !h.isOpen,
+              })) : DEFAULT_SETTINGS.ops.businessHours,
+              holidays: Array.isArray(holidayRes.data) ? holidayRes.data.map((h: any) => h.date) : [],
+            },
+            reservationPolicy: {
+              minPartySize: policy.minPartySize || 1,
+              maxPartySize: policy.maxPartySize || 20,
+              advanceBookingDays: policy.advanceBookingDays || 30,
+              sameDayCutoffMins: policy.sameDayCutoffMins || 60,
+              cancellationWindowHours: policy.cancellationWindowHours || 24,
+              autoConfirm: policy.autoConfirm ?? true,
+            },
+            turnTime: {
+              defaultDuration: defaultTurn?.durationMins || 90,
+              rules: turns.filter((t: any) => !t.isDefault).map((t: any) => ({
+                partySize: `${t.partySizeMin}-${t.partySizeMax}`,
+                duration: t.durationMins
+              })),
+            },
+          };
+        }
+
+        setSettings(newSettings);
+        setBaselineSnapshot(JSON.stringify(newSettings));
+      } catch (error) {
+        console.error("Error fetching settings:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [restaurantId, selectedBranchId]);
+
+  // Fetch Logs
+  useEffect(() => {
+    if (activeTab !== "compliance" || !restaurantId) return;
+    
+    setLoadingLogs(true);
+    getJson<{ data: AuditLogEntry[] }>(`/audit-logs?page=1&limit=5`, {
+      headers: { "x-restaurant-id": restaurantId }
+    })
+      .then(res => setLogs(res.data.data))
+      .catch(err => console.error("Error fetching logs:", err))
+      .finally(() => setLoadingLogs(false));
+  }, [activeTab, restaurantId]);
+
+  const saveSettings = async () => {
+    const toastId = toast.loading("Saving settings...");
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-      setBaselineSnapshot(JSON.stringify(settings));
-      setSaveStatus("saved");
-      window.setTimeout(() => setSaveStatus("idle"), 1500);
-    } catch {
-      setSaveStatus("error");
+      if (activeTab === "ops") {
+        if (!selectedBranchId) throw new Error("Please select a branch.");
+        
+        await Promise.all([
+          postJson("/business-hours", {
+            branchId: selectedBranchId,
+            hours: settings.ops.businessHours.map(h => ({
+              dayOfWeek: h.day,
+              openTime: h.open,
+              closeTime: h.close,
+              isOpen: !h.closed
+            })),
+            holidays: settings.ops.holidays
+          }),
+          postJson("/reservation-policies", {
+            branchId: selectedBranchId,
+            ...settings.reservationPolicy
+          }),
+          postJson("/turn-times", {
+            branchId: selectedBranchId,
+            defaultDuration: settings.turnTime.defaultDuration,
+            rules: settings.turnTime.rules.map(r => {
+              const [min, max] = r.partySize.split('-').map(Number);
+              return { partySizeMin: min, partySizeMax: max, durationMins: r.duration };
+            })
+          })
+        ]);
+      } else if (activeTab === "integrations") {
+        if (selectedBranchId) throw new Error("Global settings can only be saved at the root level.");
+        
+        await Promise.all([
+          postJson("/payment-gateways", {
+            provider: "STRIPE",
+            apiKey: settings.integrations.stripeKey,
+            secretKey: settings.integrations.stripeSecret,
+            webhookSecret: settings.integrations.stripeWebhook,
+            isActive: true
+          }),
+          postJson("/communication-channels/bulk", {
+            channels: [
+              { channel: "SMS", provider: "TWILIO", apiKey: settings.integrations.smsKey, isActive: !!settings.integrations.smsKey },
+              { channel: "WHATSAPP", provider: "META", apiKey: settings.integrations.whatsappKey, isActive: !!settings.integrations.whatsappKey },
+              { channel: "EMAIL", provider: "SENDGRID", apiKey: settings.integrations.emailKey, isActive: !!settings.integrations.emailKey }
+            ]
+          }),
+          settings.integrations.posProvider && postJson("/pos-integrations", {
+            provider: settings.integrations.posProvider,
+            apiKey: settings.integrations.posKey,
+            isActive: true
+          })
+        ]);
+      } else if (activeTab === "compliance") {
+        if (selectedBranchId) throw new Error("Global settings can only be saved at the root level.");
+        await putJson("/branding", settings.branding);
+      }
+
+      setBaselineSnapshot(snapshot);
+      toast.success("Settings saved successfully!", { id: toastId });
+    } catch (error: any) {
+      toast.error(error.message || "Failed to save settings.", { id: toastId });
     }
   };
 
   const resetSettings = () => {
-    setSettings(DEFAULT_SETTINGS);
-    setBaselineSnapshot(JSON.stringify(DEFAULT_SETTINGS));
-    setHolidayDraft("");
-    setRuleDraft("");
-    localStorage.removeItem(STORAGE_KEY);
-    setSaveStatus("idle");
+    setSettings(JSON.parse(baselineSnapshot));
+    toast.info("Changes discarded.");
   };
+
+  if (isLoading) {
+    return <div className="flex h-64 items-center justify-center">Loading settings...</div>;
+  }
 
   return (
     <div className="space-y-6">
       <div>
-        <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Settings
-        </div>
-        <div className="mt-1 text-2xl font-semibold text-slate-900">
-          Onboarding & Configuration
-        </div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Settings</div>
+        <div className="mt-1 text-2xl font-semibold text-slate-900">Restaurant Configuration</div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
         <div className="text-xs font-medium text-slate-500">
-          {saveStatus === "saved" && "Settings saved successfully."}
-          {saveStatus === "error" && "Failed to save settings."}
-          {saveStatus === "idle" && (hasChanges ? "You have unsaved changes." : "All changes saved.")}
+          {hasChanges ? "You have unsaved changes." : "All changes saved."}
         </div>
         <div className="flex items-center gap-2">
           <button
-            type="button"
             onClick={resetSettings}
             className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
           >
             Reset
           </button>
           <button
-            type="button"
             onClick={saveSettings}
-            className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
             disabled={!hasChanges}
+            className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
           >
-            Save settings
+            Save Changes
           </button>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id)}
-            className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
-              activeTab === tab.id
-                ? "bg-slate-900 text-white"
-                : "bg-white text-slate-600 border border-slate-200"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="flex gap-2">
+        {tabs.map((tab) => {
+          if (tab.id === "ops" && !selectedBranchId) return null;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
+                activeTab === tab.id ? "bg-slate-900 text-white" : "bg-white text-slate-600 border border-slate-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {activeTab === "ops" && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {/* Business Hours */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-            <div className="text-sm font-semibold text-slate-900">Business Hours & Holidays</div>
-            <div className="grid grid-cols-1 gap-3 text-sm text-slate-600">
+            <h3 className="text-sm font-semibold text-slate-900">Business Hours</h3>
+            <div className="space-y-2">
               {settings.ops.businessHours.map((row) => (
-                <div
-                  key={row.day}
-                  className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 px-3 py-2 sm:grid-cols-[48px_1fr_1fr_auto] sm:items-center sm:px-4"
-                >
-                  <span>{row.day}</span>
+                <div key={row.day} className="grid grid-cols-4 items-center gap-2 rounded-xl bg-slate-50 p-2 px-3 text-xs">
+                  <span className="font-medium">{row.day}</span>
                   <input
                     type="time"
                     value={row.open}
                     disabled={row.closed}
-                    onChange={(event) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        ops: {
-                          ...prev.ops,
-                          businessHours: prev.ops.businessHours.map((item) =>
-                            item.day === row.day ? { ...item, open: event.target.value } : item
-                          ),
-                        },
-                      }))
-                    }
-                    className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                    onChange={(e) => setSettings(prev => ({
+                      ...prev,
+                      ops: { ...prev.ops, businessHours: prev.ops.businessHours.map(d => d.day === row.day ? { ...d, open: e.target.value } : d) }
+                    }))}
+                    className="rounded border border-slate-200 p-1"
                   />
                   <input
                     type="time"
                     value={row.close}
                     disabled={row.closed}
-                    onChange={(event) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        ops: {
-                          ...prev.ops,
-                          businessHours: prev.ops.businessHours.map((item) =>
-                            item.day === row.day ? { ...item, close: event.target.value } : item
-                          ),
-                        },
-                      }))
-                    }
-                    className="w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                    onChange={(e) => setSettings(prev => ({
+                      ...prev,
+                      ops: { ...prev.ops, businessHours: prev.ops.businessHours.map(d => d.day === row.day ? { ...d, close: e.target.value } : d) }
+                    }))}
+                    className="rounded border border-slate-200 p-1"
                   />
-                  <label className="flex items-center justify-end gap-1 text-xs sm:justify-start">
+                  <label className="flex items-center gap-1">
                     <input
                       type="checkbox"
                       checked={row.closed}
-                      onChange={(event) =>
-                        setSettings((prev) => ({
-                          ...prev,
-                          ops: {
-                            ...prev.ops,
-                            businessHours: prev.ops.businessHours.map((item) =>
-                              item.day === row.day ? { ...item, closed: event.target.checked } : item
-                            ),
-                          },
-                        }))
-                      }
+                      onChange={(e) => setSettings(prev => ({
+                        ...prev,
+                        ops: { ...prev.ops, businessHours: prev.ops.businessHours.map(d => d.day === row.day ? { ...d, closed: e.target.checked } : d) }
+                      }))}
                     />
                     Closed
                   </label>
                 </div>
               ))}
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <FiCalendar className="text-slate-400" />
-              <input
-                type="date"
-                value={holidayDraft}
-                onChange={(event) => setHolidayDraft(event.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
-                placeholder="Add holiday / blackout date"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (!holidayDraft) return;
-                  setSettings((prev) => ({
-                    ...prev,
-                    ops: {
-                      ...prev.ops,
-                      holidays: Array.from(new Set([...prev.ops.holidays, holidayDraft])),
-                    },
-                  }));
-                  setHolidayDraft("");
-                }}
-                className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"
-              >
-                Add
-              </button>
-            </div>
-            {settings.ops.holidays.length > 0 ? (
+            
+            <div className="space-y-2 pt-4">
+              <h4 className="text-xs font-semibold text-slate-500 uppercase">Holidays & Blackout Dates</h4>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={holidayDraft}
+                  onChange={(e) => setHolidayDraft(e.target.value)}
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                />
+                <button
+                  onClick={() => {
+                    if (!holidayDraft) return;
+                    setSettings(prev => ({ ...prev, ops: { ...prev.ops, holidays: [...prev.ops.holidays, holidayDraft] } }));
+                    setHolidayDraft("");
+                  }}
+                  className="rounded-lg bg-slate-100 px-3 text-xs font-semibold"
+                >
+                  Add
+                </button>
+              </div>
               <div className="flex flex-wrap gap-2">
-                {settings.ops.holidays.map((holiday) => (
-                  <button
-                    key={holiday}
-                    type="button"
-                    onClick={() =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        ops: {
-                          ...prev.ops,
-                          holidays: prev.ops.holidays.filter((item) => item !== holiday),
-                        },
-                      }))
-                    }
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600"
-                    title="Remove holiday"
-                  >
-                    {holiday} x
-                  </button>
+                {settings.ops.holidays.map(h => (
+                  <span key={h} className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-medium text-slate-600">
+                    {h} <button onClick={() => setSettings(prev => ({ ...prev, ops: { ...prev.ops, holidays: prev.ops.holidays.filter(x => x !== h) } }))} className="ml-1 text-slate-400">×</button>
+                  </span>
                 ))}
               </div>
-            ) : null}
+            </div>
           </div>
 
+          {/* Reservation Policy */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-            <div className="text-sm font-semibold text-slate-900">
-              Reservation Policy Configuration
+            <h3 className="text-sm font-semibold text-slate-900">Reservation Policy</h3>
+            <div className="space-y-4 text-sm text-slate-600">
+              {[
+                { label: "Min Party Size", key: "minPartySize" },
+                { label: "Max Party Size", key: "maxPartySize" },
+                { label: "Advance Booking (Days)", key: "advanceBookingDays" },
+                { label: "Same-Day Cutoff (Mins)", key: "sameDayCutoffMins" },
+                { label: "Cancellation Window (Hrs)", key: "cancellationWindowHours" },
+              ].map(field => (
+                <div key={field.key} className="flex items-center justify-between">
+                  <span>{field.label}</span>
+                  <input
+                    type="number"
+                    value={(settings.reservationPolicy as any)[field.key]}
+                    onChange={(e) => setSettings(prev => ({
+                      ...prev,
+                      reservationPolicy: { ...prev.reservationPolicy, [field.key]: Number(e.target.value) }
+                    }))}
+                    className="w-20 rounded-lg border border-slate-200 px-2 py-1 text-right"
+                  />
+                </div>
+              ))}
+              <label className="flex items-center gap-2 pt-2">
+                <input
+                  type="checkbox"
+                  checked={settings.reservationPolicy.autoConfirm}
+                  onChange={(e) => setSettings(prev => ({
+                    ...prev,
+                    reservationPolicy: { ...prev.reservationPolicy, autoConfirm: e.target.checked }
+                  }))}
+                />
+                Auto-confirm reservations
+              </label>
             </div>
-            {[
-              "Max party size",
-              "Advance booking window (days)",
-              "Same‑day cutoff",
-              "Cancellation window (hrs)",
-            ].map((label) => (
-              <div
-                key={label}
-                className="flex flex-col gap-2 rounded-xl bg-slate-50 px-4 py-2 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <span className="text-sm text-slate-600">{label}</span>
-                {label === "Max party size" ? (
-                  <input
-                    type="number"
-                    value={settings.ops.reservationPolicy.maxPartySize}
-                    onChange={(event) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        ops: {
-                          ...prev.ops,
-                          reservationPolicy: {
-                            ...prev.ops.reservationPolicy,
-                            maxPartySize: Number(event.target.value),
-                          },
-                        },
-                      }))
-                    }
-                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs sm:w-28"
-                  />
-                ) : null}
-                {label === "Advance booking window (days)" ? (
-                  <input
-                    type="number"
-                    value={settings.ops.reservationPolicy.advanceBookingDays}
-                    onChange={(event) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        ops: {
-                          ...prev.ops,
-                          reservationPolicy: {
-                            ...prev.ops.reservationPolicy,
-                            advanceBookingDays: Number(event.target.value),
-                          },
-                        },
-                      }))
-                    }
-                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs sm:w-28"
-                  />
-                ) : null}
-                {label === "Same‑day cutoff" ? (
-                  <input
-                    type="time"
-                    value={settings.ops.reservationPolicy.sameDayCutoff}
-                    onChange={(event) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        ops: {
-                          ...prev.ops,
-                          reservationPolicy: {
-                            ...prev.ops.reservationPolicy,
-                            sameDayCutoff: event.target.value,
-                          },
-                        },
-                      }))
-                    }
-                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs sm:w-28"
-                  />
-                ) : null}
-                {label === "Cancellation window (hrs)" ? (
-                  <input
-                    type="number"
-                    value={settings.ops.reservationPolicy.cancellationWindowHours}
-                    onChange={(event) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        ops: {
-                          ...prev.ops,
-                          reservationPolicy: {
-                            ...prev.ops.reservationPolicy,
-                            cancellationWindowHours: Number(event.target.value),
-                          },
-                        },
-                      }))
-                    }
-                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs sm:w-28"
-                  />
-                ) : null}
+          </div>
+
+          {/* Turn Times */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 xl:col-span-2">
+            <h3 className="text-sm font-semibold text-slate-900">Turn Times</h3>
+            <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
+              <span className="text-sm text-slate-600">Default Duration</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={settings.turnTime.defaultDuration}
+                  onChange={(e) => setSettings(prev => ({ ...prev, turnTime: { ...prev.turnTime, defaultDuration: Number(e.target.value) } }))}
+                  className="w-20 rounded-lg border border-slate-200 px-2 py-1 text-center"
+                />
+                <span className="text-xs text-slate-500">minutes</span>
               </div>
-            ))}
-          </div>
+            </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-            <div className="text-sm font-semibold text-slate-900">
-              Turn Time & Dining Duration Rules
-            </div>
-            <div className="rounded-xl bg-slate-50 px-4 py-2 text-sm text-slate-600">
-              Weekdays: {settings.ops.turnTime.weekdayMinutes} mins · Weekends:{" "}
-              {settings.ops.turnTime.weekendMinutes} mins · Parties{" "}
-              {settings.ops.turnTime.largePartySize}+: +
-              {settings.ops.turnTime.extraMinutesForLargeParty} mins
-            </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <input
-                type="number"
-                value={settings.ops.turnTime.weekdayMinutes}
-                onChange={(event) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    ops: {
-                      ...prev.ops,
-                      turnTime: {
-                        ...prev.ops.turnTime,
-                        weekdayMinutes: Number(event.target.value),
-                      },
-                    },
-                  }))
-                }
-                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
-                placeholder="Weekday mins"
-              />
-              <input
-                type="number"
-                value={settings.ops.turnTime.weekendMinutes}
-                onChange={(event) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    ops: {
-                      ...prev.ops,
-                      turnTime: {
-                        ...prev.ops.turnTime,
-                        weekendMinutes: Number(event.target.value),
-                      },
-                    },
-                  }))
-                }
-                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
-                placeholder="Weekend mins"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <FiSliders className="text-slate-400" />
-              <input
-                value={ruleDraft}
-                onChange={(event) => setRuleDraft(event.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
-                placeholder="Add rule (e.g., Party size > 6)"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const value = ruleDraft.trim();
-                  if (!value) return;
-                  setSettings((prev) => ({
-                    ...prev,
-                    ops: {
-                      ...prev.ops,
-                      turnTime: {
-                        ...prev.ops.turnTime,
-                        customRules: [...prev.ops.turnTime.customRules, value],
-                      },
-                    },
-                  }));
-                  setRuleDraft("");
-                }}
-                className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"
-              >
-                Add
-              </button>
-            </div>
-            {settings.ops.turnTime.customRules.length ? (
-              <div className="flex flex-wrap gap-2">
-                {settings.ops.turnTime.customRules.map((rule) => (
-                  <button
-                    key={rule}
-                    type="button"
-                    onClick={() =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        ops: {
-                          ...prev.ops,
-                          turnTime: {
-                            ...prev.ops.turnTime,
-                            customRules: prev.ops.turnTime.customRules.filter((item) => item !== rule),
-                          },
-                        },
-                      }))
-                    }
-                    className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600"
-                    title="Remove rule"
-                  >
-                    {rule} x
-                  </button>
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-slate-500 uppercase">Custom Rules by Party Size</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                {settings.turnTime.rules.map((rule, idx) => (
+                  <div key={idx} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 p-2 px-3 text-xs">
+                    <span>Parties of <strong>{rule.partySize}</strong></span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-900">{rule.duration}m</span>
+                      <button
+                        onClick={() => setSettings(prev => ({ ...prev, turnTime: { ...prev.turnTime, rules: prev.turnTime.rules.filter((_, i) => i !== idx) } }))}
+                        className="text-slate-400 hover:text-rose-500"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
                 ))}
               </div>
-            ) : null}
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-            <div className="text-sm font-semibold text-slate-900">Table Configuration Rules</div>
-            {[
-              "Min party size",
-              "Max party size",
-              "Combinable tables",
-              "VIP designation",
-            ].map((label) => (
-              <div
-                key={label}
-                className="flex flex-col gap-2 rounded-xl bg-slate-50 px-4 py-2 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <span className="text-sm text-slate-600">{label}</span>
-                {label === "Min party size" ? (
-                  <input
-                    type="number"
-                    value={settings.ops.tableConfig.minPartySize}
-                    onChange={(event) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        ops: {
-                          ...prev.ops,
-                          tableConfig: {
-                            ...prev.ops.tableConfig,
-                            minPartySize: Number(event.target.value),
-                          },
-                        },
-                      }))
-                    }
-                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs sm:w-28"
-                  />
-                ) : null}
-                {label === "Max party size" ? (
-                  <input
-                    type="number"
-                    value={settings.ops.tableConfig.maxPartySize}
-                    onChange={(event) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        ops: {
-                          ...prev.ops,
-                          tableConfig: {
-                            ...prev.ops.tableConfig,
-                            maxPartySize: Number(event.target.value),
-                          },
-                        },
-                      }))
-                    }
-                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs sm:w-28"
-                  />
-                ) : null}
-                {label === "Combinable tables" ? (
-                  <input
-                    type="number"
-                    value={settings.ops.tableConfig.combinableTables}
-                    onChange={(event) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        ops: {
-                          ...prev.ops,
-                          tableConfig: {
-                            ...prev.ops.tableConfig,
-                            combinableTables: Number(event.target.value),
-                          },
-                        },
-                      }))
-                    }
-                    className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs sm:w-28"
-                  />
-                ) : null}
-                {label === "VIP designation" ? (
-                  <label className="inline-flex items-center gap-2 text-xs text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={settings.ops.tableConfig.vipEnabled}
-                      onChange={(event) =>
-                        setSettings((prev) => ({
-                          ...prev,
-                          ops: {
-                            ...prev.ops,
-                            tableConfig: {
-                              ...prev.ops.tableConfig,
-                              vipEnabled: event.target.checked,
-                            },
-                          },
-                        }))
-                      }
-                    />
-                    Enabled
-                  </label>
-                ) : null}
+              
+              <div className="flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-100 p-2">
+                <input type="text" placeholder="Size (e.g. 6-8)" id="newRuleSize" className="flex-1 rounded border-none bg-transparent px-2 py-1 text-xs focus:ring-0" />
+                <input type="number" placeholder="Mins" id="newRuleMins" className="w-16 rounded border-none bg-transparent px-2 py-1 text-xs focus:ring-0" />
+                <button
+                  onClick={() => {
+                    const s = (document.getElementById('newRuleSize') as HTMLInputElement).value;
+                    const m = (document.getElementById('newRuleMins') as HTMLInputElement).value;
+                    if (!s || !m) return;
+                    setSettings(prev => ({ ...prev, turnTime: { ...prev.turnTime, rules: [...prev.turnTime.rules, { partySize: s, duration: Number(m) }] } }));
+                    (document.getElementById('newRuleSize') as HTMLInputElement).value = "";
+                    (document.getElementById('newRuleMins') as HTMLInputElement).value = "";
+                  }}
+                  className="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white"
+                >
+                  Add Rule
+                </button>
               </div>
-            ))}
+            </div>
           </div>
         </div>
       )}
 
       {activeTab === "integrations" && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiCreditCard /> Payment Gateway Setup
-            </div>
-            <input
-              value={settings.integrations.paymentGateway.provider}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  integrations: {
-                    ...prev.integrations,
-                    paymentGateway: {
-                      ...prev.integrations.paymentGateway,
-                      provider: event.target.value,
-                    },
-                  },
-                }))
-              }
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600"
-              placeholder="Provider name"
-            />
-            <input
-              value={settings.integrations.paymentGateway.apiKey}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  integrations: {
-                    ...prev.integrations,
-                    paymentGateway: {
-                      ...prev.integrations.paymentGateway,
-                      apiKey: event.target.value,
-                    },
-                  },
-                }))
-              }
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600"
-              placeholder="API key"
-            />
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiMail /> Communication Channels
-            </div>
-            <input
-              value={settings.integrations.communication.smsApiKey}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  integrations: {
-                    ...prev.integrations,
-                    communication: {
-                      ...prev.integrations.communication,
-                      smsApiKey: event.target.value,
-                    },
-                  },
-                }))
-              }
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600"
-              placeholder="SMS API key"
-            />
-            <input
-              value={settings.integrations.communication.whatsappApiKey}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  integrations: {
-                    ...prev.integrations,
-                    communication: {
-                      ...prev.integrations.communication,
-                      whatsappApiKey: event.target.value,
-                    },
-                  },
-                }))
-              }
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600"
-              placeholder="WhatsApp API key"
-            />
-            <input
-              value={settings.integrations.communication.emailProvider}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  integrations: {
-                    ...prev.integrations,
-                    communication: {
-                      ...prev.integrations.communication,
-                      emailProvider: event.target.value,
-                    },
-                  },
-                }))
-              }
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600"
-              placeholder="Email provider"
-            />
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiLink /> POS Integration Setup
-            </div>
-            <input
-              value={settings.integrations.pos.provider}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  integrations: {
-                    ...prev.integrations,
-                    pos: { ...prev.integrations.pos, provider: event.target.value },
-                  },
-                }))
-              }
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600"
-              placeholder="POS provider"
-            />
-            <input
-              value={settings.integrations.pos.locationId}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  integrations: {
-                    ...prev.integrations,
-                    pos: { ...prev.integrations.pos, locationId: event.target.value },
-                  },
-                }))
-              }
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600"
-              placeholder="Location ID"
-            />
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiDatabase /> Data Import & Migration
-            </div>
-            <select
-              value={settings.integrations.dataImport.defaultFormat}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  integrations: {
-                    ...prev.integrations,
-                    dataImport: {
-                      ...prev.integrations.dataImport,
-                      defaultFormat: event.target.value,
-                    },
-                  },
-                }))
-              }
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600"
-            >
-              <option value="CSV">CSV</option>
-              <option value="Excel">Excel</option>
-              <option value="JSON">JSON</option>
-            </select>
-            <label className="inline-flex items-center gap-2 text-sm text-slate-600">
-              <input
-                type="checkbox"
-                checked={settings.integrations.dataImport.strictValidation}
-                onChange={(event) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    integrations: {
-                      ...prev.integrations,
-                      dataImport: {
-                        ...prev.integrations.dataImport,
-                        strictValidation: event.target.checked,
-                      },
-                    },
-                  }))
-                }
-              />
-              Strict validation
-            </label>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiGlobe /> Booking Widget Configuration
-            </div>
-            <div className="grid grid-cols-1 gap-2 text-sm text-slate-600">
-              <input
-                value={settings.integrations.widget.language}
-                onChange={(event) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    integrations: {
-                      ...prev.integrations,
-                      widget: { ...prev.integrations.widget, language: event.target.value },
-                    },
-                  }))
-                }
-                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2"
-                placeholder="Language"
-              />
-              <input
-                value={settings.integrations.widget.timezone}
-                onChange={(event) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    integrations: {
-                      ...prev.integrations,
-                      widget: { ...prev.integrations.widget, timezone: event.target.value },
-                    },
-                  }))
-                }
-                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2"
-                placeholder="Timezone"
-              />
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {/* Payment Gateway */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 text-sm">
+            <div className="flex items-center gap-2 font-semibold text-slate-900"><FiCreditCard className="text-blue-500" /> Stripe Integration</div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-slate-500 uppercase">Publishable Key</label>
                 <input
-                  type="number"
-                  value={settings.integrations.widget.minPartySize}
-                  onChange={(event) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      integrations: {
-                        ...prev.integrations,
-                        widget: {
-                          ...prev.integrations.widget,
-                          minPartySize: Number(event.target.value),
-                        },
-                      },
-                    }))
-                  }
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2"
-                  placeholder="Min party"
+                  type="text"
+                  value={settings.integrations.stripeKey}
+                  disabled={!!selectedBranchId}
+                  onChange={(e) => setSettings(prev => ({ ...prev, integrations: { ...prev.integrations, stripeKey: e.target.value } }))}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 disabled:opacity-50"
+                  placeholder="pk_test_..."
                 />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 uppercase">Secret Key</label>
                 <input
-                  type="number"
-                  value={settings.integrations.widget.maxPartySize}
-                  onChange={(event) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      integrations: {
-                        ...prev.integrations,
-                        widget: {
-                          ...prev.integrations.widget,
-                          maxPartySize: Number(event.target.value),
-                        },
-                      },
-                    }))
-                  }
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2"
-                  placeholder="Max party"
+                  type="password"
+                  value={settings.integrations.stripeSecret}
+                  disabled={!!selectedBranchId}
+                  onChange={(e) => setSettings(prev => ({ ...prev, integrations: { ...prev.integrations, stripeSecret: e.target.value } }))}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 disabled:opacity-50"
+                  placeholder="sk_test_..."
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 uppercase">Webhook Secret</label>
+                <input
+                  type="text"
+                  value={settings.integrations.stripeWebhook}
+                  disabled={!!selectedBranchId}
+                  onChange={(e) => setSettings(prev => ({ ...prev, integrations: { ...prev.integrations, stripeWebhook: e.target.value } }))}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 disabled:opacity-50"
+                  placeholder="whsec_..."
+                />
+              </div>
+            </div>
+            {selectedBranchId && <div className="text-[10px] italic text-slate-400">Global setting - read-only while in branch context</div>}
+          </div>
+
+          {/* POS Integration */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 text-sm">
+            <div className="flex items-center gap-2 font-semibold text-slate-900"><FiZap className="text-amber-500" /> POS Integration</div>
+            <div className="space-y-3">
+              <select
+                value={settings.integrations.posProvider}
+                disabled={!!selectedBranchId}
+                onChange={(e) => setSettings(prev => ({ ...prev, integrations: { ...prev.integrations, posProvider: e.target.value } }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2"
+              >
+                <option value="">Select Provider</option>
+                <option value="SQUARE">Square</option>
+                <option value="CLOVER">Clover</option>
+                <option value="TOAST">Toast</option>
+              </select>
+              <input
+                type="text"
+                value={settings.integrations.posKey}
+                disabled={!!selectedBranchId}
+                onChange={(e) => setSettings(prev => ({ ...prev, integrations: { ...prev.integrations, posKey: e.target.value } }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 disabled:opacity-50"
+                placeholder="POS API Key"
+              />
+            </div>
+          </div>
+
+          {/* Communications */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-6 xl:col-span-2">
+            <div className="flex items-center gap-2 font-semibold text-slate-900"><FiMessageSquare className="text-purple-500" /> Communication Channels</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-3 rounded-2xl bg-slate-50 p-4">
+                <div className="flex items-center gap-2 text-[10px] font-bold uppercase text-slate-400"><FiSmartphone /> SMS (Twilio)</div>
+                <input
+                  type="text"
+                  value={settings.integrations.smsKey}
+                  disabled={!!selectedBranchId}
+                  onChange={(e) => setSettings(prev => ({ ...prev, integrations: { ...prev.integrations, smsKey: e.target.value } }))}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                  placeholder="Twilio API Key"
+                />
+              </div>
+              <div className="space-y-3 rounded-2xl bg-slate-50 p-4">
+                <div className="flex items-center gap-2 text-[10px] font-bold uppercase text-slate-400"><FiGlobe /> WhatsApp (Meta)</div>
+                <input
+                  type="text"
+                  value={settings.integrations.whatsappKey}
+                  disabled={!!selectedBranchId}
+                  onChange={(e) => setSettings(prev => ({ ...prev, integrations: { ...prev.integrations, whatsappKey: e.target.value } }))}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                  placeholder="Meta Access Token"
+                />
+              </div>
+              <div className="space-y-3 rounded-2xl bg-slate-50 p-4">
+                <div className="flex items-center gap-2 text-[10px] font-bold uppercase text-slate-400"><FiMail /> Email (SendGrid)</div>
+                <input
+                  type="text"
+                  value={settings.integrations.emailKey}
+                  disabled={!!selectedBranchId}
+                  onChange={(e) => setSettings(prev => ({ ...prev, integrations: { ...prev.integrations, emailKey: e.target.value } }))}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                  placeholder="SendGrid API Key"
                 />
               </div>
             </div>
@@ -936,168 +738,79 @@ const Settings = () => {
 
       {activeTab === "compliance" && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {/* Branding */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiTag /> Branding & White‑Label
+            <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-tight">Theme & Branding</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-slate-500 uppercase">Logo URL</label>
+                <input
+                  type="text"
+                  value={settings.branding.logoUrl}
+                  disabled={!!selectedBranchId}
+                  onChange={(e) => setSettings(prev => ({ ...prev, branding: { ...prev.branding, logoUrl: e.target.value } }))}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm disabled:opacity-50"
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {['primaryColor', 'secondaryColor', 'accentColor'].map(color => (
+                  <div key={color}>
+                    <label className="text-[10px] font-medium text-slate-400 uppercase">{color.replace('Color', '')}</label>
+                    <input
+                      type="color"
+                      value={(settings.branding as any)[color]}
+                      disabled={!!selectedBranchId}
+                      onChange={(e) => setSettings(prev => ({ ...prev, branding: { ...prev.branding, [color]: e.target.value } }))}
+                      className="mt-1 h-10 w-full cursor-pointer rounded-lg border-none bg-transparent"
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
-            <input
-              value={settings.compliance.branding.logoUrl}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  compliance: {
-                    ...prev.compliance,
-                    branding: {
-                      ...prev.compliance.branding,
-                      logoUrl: event.target.value,
-                    },
-                  },
-                }))
-              }
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600"
-              placeholder="Logo URL"
-            />
-            <input
-              value={settings.compliance.branding.primaryColor}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  compliance: {
-                    ...prev.compliance,
-                    branding: {
-                      ...prev.compliance.branding,
-                      primaryColor: event.target.value,
-                    },
-                  },
-                }))
-              }
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600"
-              placeholder="Primary color"
-            />
           </div>
 
+          {/* Go-Live Checklist */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiShield /> Audit Logs & Change Tracking
+            <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-tight">Go-Live Readiness</h3>
+            <div className="space-y-3 rounded-2xl bg-slate-50 p-4">
+              {Object.entries(settings.compliance.goLiveChecklist).map(([key, value]) => (
+                <div key={key} className="flex items-center justify-between text-sm">
+                  <span className="capitalize text-slate-600">{key.replace(/([A-Z])/g, ' $1')}</span>
+                  <div className={`h-2.5 w-2.5 rounded-full ${value ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                </div>
+              ))}
             </div>
-            <input
-              type="number"
-              value={settings.compliance.audit.retentionDays}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  compliance: {
-                    ...prev.compliance,
-                    audit: {
-                      ...prev.compliance.audit,
-                      retentionDays: Number(event.target.value),
-                    },
-                  },
-                }))
-              }
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600"
-              placeholder="Retention days"
-            />
-            <input
-              value={settings.compliance.audit.alertEmail}
-              onChange={(event) =>
-                setSettings((prev) => ({
-                  ...prev,
-                  compliance: {
-                    ...prev.compliance,
-                    audit: {
-                      ...prev.compliance.audit,
-                      alertEmail: event.target.value,
-                    },
-                  },
-                }))
-              }
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600"
-              placeholder="Alert email"
-            />
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FiCloud /> Go‑Live Checklist & Validation
-            </div>
-            <div className="space-y-2 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={settings.compliance.goLiveChecklist.hoursConfigured}
-                  onChange={(event) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      compliance: {
-                        ...prev.compliance,
-                        goLiveChecklist: {
-                          ...prev.compliance.goLiveChecklist,
-                          hoursConfigured: event.target.checked,
-                        },
-                      },
-                    }))
-                  }
-                />
-                Business hours configured
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={settings.compliance.goLiveChecklist.tablesConfigured}
-                  onChange={(event) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      compliance: {
-                        ...prev.compliance,
-                        goLiveChecklist: {
-                          ...prev.compliance.goLiveChecklist,
-                          tablesConfigured: event.target.checked,
-                        },
-                      },
-                    }))
-                  }
-                />
-                Tables configured
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={settings.compliance.goLiveChecklist.paymentsConfigured}
-                  onChange={(event) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      compliance: {
-                        ...prev.compliance,
-                        goLiveChecklist: {
-                          ...prev.compliance.goLiveChecklist,
-                          paymentsConfigured: event.target.checked,
-                        },
-                      },
-                    }))
-                  }
-                />
-                Payments configured
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={settings.compliance.goLiveChecklist.policiesConfigured}
-                  onChange={(event) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      compliance: {
-                        ...prev.compliance,
-                        goLiveChecklist: {
-                          ...prev.compliance.goLiveChecklist,
-                          policiesConfigured: event.target.checked,
-                        },
-                      },
-                    }))
-                  }
-                />
-                Policies configured
-              </label>
+          {/* Recent Audit Logs */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 xl:col-span-2">
+            <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-tight">Recent Activity Stream</h3>
+            <div className="space-y-2">
+              {loadingLogs ? (
+                <div className="flex justify-center py-4 text-xs text-slate-400 italic">Updating stream...</div>
+              ) : logs.length > 0 ? (
+                logs.map(log => {
+                  const severity = severityByAction(log.action);
+                  return (
+                    <div key={log.id} className="flex items-center justify-between rounded-xl border border-slate-50 bg-slate-50/50 p-3 text-xs transition-hover hover:bg-slate-50">
+                      <div className="flex items-center gap-3">
+                        <div className={`h-2 w-2 rounded-full ${severity === 'High' ? 'bg-rose-500' : severity === 'Medium' ? 'bg-amber-500' : 'bg-slate-400'}`} />
+                        <div>
+                          <div className="font-bold text-slate-900">{log.action} <span className="font-normal text-slate-400">on</span> {log.entity}</div>
+                          <div className="text-[10px] text-slate-500">{getActorName(log)} · {formatRelativeTime(log.createdAt)}</div>
+                        </div>
+                      </div>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${severityClassMap[severity]}`}>
+                        {severity}
+                      </span>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-xs text-slate-400">
+                  No recent activities recorded.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1105,5 +818,6 @@ const Settings = () => {
     </div>
   );
 };
+
 
 export default Settings;

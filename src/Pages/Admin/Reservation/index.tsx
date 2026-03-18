@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useBranchContext } from "@/context/BranchContext";
 import {
   FiCalendar,
   FiCheckCircle,
@@ -63,6 +64,7 @@ const heatmap = [
 ];
 
 const Reservation = () => {
+  const { selectedBranchId, branches } = useBranchContext();
   const [view, setView] = useState("Day");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [reservations, setReservations] = useState(initialReservations);
@@ -142,26 +144,40 @@ const Reservation = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Reservations
+      {!selectedBranchId ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+          <h2 className="text-xl font-bold text-slate-900">Select a Branch</h2>
+          <p className="mt-2 text-sm text-slate-500">
+            Please select a specific branch from the sidebar to view and manage reservations.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Reservations
+              </div>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="text-2xl font-semibold text-slate-900">Reservation Dashboard</span>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                  {branches.find(b => b.id === selectedBranchId)?.name}
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
+                <FiFilter /> Filters
+              </button>
+              <button
+                type="button"
+                onClick={() => openReservationModal("Web")}
+                className="flex items-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white"
+              >
+                <FiPlus /> New Reservation
+              </button>
+            </div>
           </div>
-          <div className="mt-1 text-2xl font-semibold text-slate-900">Reservation Dashboard</div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
-            <FiFilter /> Filters
-          </button>
-          <button
-            type="button"
-            onClick={() => openReservationModal("Web")}
-            className="flex items-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white"
-          >
-            <FiPlus /> New Reservation
-          </button>
-        </div>
-      </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -470,6 +486,8 @@ const Reservation = () => {
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

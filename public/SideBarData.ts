@@ -9,6 +9,7 @@ export const AdminMasterLevel = [
   { name: "Marketing", path: "/dashboard/marketing" },
   { name: "Analytics", path: "/dashboard/analytics" },
   { name: "Settings", path: "/dashboard/settings" },
+  { name: "Onboarding", path: "/dashboard/onboarding" },
 ];
 
 export const AdminBranchLevel = [
@@ -22,4 +23,5 @@ export const AdminBranchLevel = [
   { name: "Marketing", path: "/dashboard/marketing" },
   { name: "Analytics", path: "/dashboard/analytics" },
   { name: "Settings", path: "/dashboard/settings" },
+  { name: "Onboarding", path: "/dashboard/onboarding" },
 ];

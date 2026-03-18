@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
   FiCalendar,
   FiEdit2,
@@ -12,77 +13,143 @@ import {
   FiX,
 } from "react-icons/fi";
 import { Link } from "react-router-dom";
+import { getStoredRestaurantId, getStoredUserId, isSessionActive } from "@/lib/auth";
+import { getJson, putJson } from "@/lib/api";
+import Loader from "@/Components/loader";
 
 type ProfileData = {
-  fullName: string;
-  role: string;
+  id: string;
+  firstName: string;
+  lastName: string;
   email: string;
-  phone: string;
-  location: string;
-  timezone: string;
-};
-
-const STORAGE_KEY = "admin_profile_v1";
-
-const defaultProfile: ProfileData = {
-  fullName: "Ava Collins",
-  role: "Operations Admin",
-  email: "ava.collins@byewind.com",
-  phone: "+1 (415) 555-2033",
-  location: "San Francisco, CA",
-  timezone: "America/Los_Angeles",
-};
-
-const readStoredProfile = (): ProfileData => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultProfile;
-    return { ...defaultProfile, ...(JSON.parse(raw) as Partial<ProfileData>) };
-  } catch {
-    return defaultProfile;
-  }
+  phone: string | null;
+  role: string;
+  isActive: boolean;
+  createdAt?: string;
+  lastLoginAt?: string | null;
 };
 
 const Profile = () => {
-  const [profile, setProfile] = useState<ProfileData>(() => readStoredProfile());
-  const [draft, setDraft] = useState<ProfileData>(() => readStoredProfile());
+  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [draft, setDraft] = useState<Partial<ProfileData>>({});
   const [isEditing, setIsEditing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [saveLoading, setSaveLoading] = useState(false);
+
+  const restaurantId = getStoredRestaurantId();
+  const userId = getStoredUserId();
+
+  useEffect(() => {
+    if (!isSessionActive() || !userId) {
+      setIsLoading(false);
+      return;
+    }
+
+    let mounted = true;
+    const fetchProfile = async () => {
+      try {
+        const response = await getJson<ProfileData>(`/staff/${userId}`, {
+          headers: restaurantId ? { "x-restaurant-id": restaurantId } : undefined,
+        });
+        if (mounted) {
+          setProfile(response.data);
+          setError("");
+        }
+      } catch (err) {
+        if (mounted) {
+          setError("Unable to load profile information.");
+          console.error(err);
+        }
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    };
+
+    fetchProfile();
+    return () => {
+      mounted = false;
+    };
+  }, [userId, restaurantId]);
 
   const startEdit = () => {
-    setDraft(profile);
+    if (!profile) return;
+    setDraft({
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      phone: profile.phone ?? "",
+    });
     setIsEditing(true);
   };
 
   const cancelEdit = () => {
-    setDraft(profile);
+    setDraft({});
     setIsEditing(false);
   };
 
-  const saveEdit = () => {
-    setProfile(draft);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
-    setIsEditing(false);
+  const saveEdit = async () => {
+    if (!userId) return;
+    setSaveLoading(true);
+    const toastId = toast.loading("Saving changes...");
+    try {
+      const response = await putJson<ProfileData>(
+        `/staff/${userId}`,
+        {
+          firstName: draft.firstName,
+          lastName: draft.lastName,
+          phone: draft.phone,
+        },
+        {
+          headers: restaurantId ? { "x-restaurant-id": restaurantId } : undefined,
+        }
+      );
+      setProfile(response.data);
+      setIsEditing(false);
+      setError("");
+      toast.success("Profile updated successfully!", { id: toastId });
+    } catch (err: any) {
+      setError(err.message || "Failed to save changes.");
+      toast.error(err.message || "Failed to save changes.", { id: toastId });
+      console.error(err);
+    } finally {
+      setSaveLoading(false);
+    }
   };
 
-  const fields: Array<{ key: keyof ProfileData; label: string }> = [
-    { key: "fullName", label: "Full name" },
-    { key: "role", label: "Role" },
-    { key: "email", label: "Email" },
-    { key: "phone", label: "Phone" },
-    { key: "location", label: "Location" },
-    { key: "timezone", label: "Timezone" },
-  ];
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader size={32} color="#0f172a" />
+      </div>
+    );
+  }
+
+  if (!profile && !isLoading) {
+    return (
+      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-rose-700">
+        Profile information not found. Please try logging in again.
+      </div>
+    );
+  }
+
+  const fullName = `${profile?.firstName} ${profile?.lastName}`;
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
+          {error}
+        </div>
+      )}
+
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-500">
             <FiUser className="text-xl" />
           </div>
           <div>
-            <div className="text-2xl font-semibold text-slate-900">{profile.fullName}</div>
-            <div className="text-sm text-slate-500">{profile.role}</div>
+            <div className="text-2xl font-semibold text-slate-900">{fullName}</div>
+            <div className="text-sm text-slate-500">{profile?.role}</div>
             <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
               <FiShield /> Admin Verified
             </div>
@@ -93,9 +160,10 @@ const Profile = () => {
                 <button
                   type="button"
                   onClick={saveEdit}
-                  className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                  disabled={saveLoading}
+                  className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
                 >
-                  <FiSave /> Save
+                  <FiSave /> {saveLoading ? "Saving..." : "Save"}
                 </button>
                 <button
                   type="button"
@@ -138,23 +206,60 @@ const Profile = () => {
             </button>
           </div>
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {fields.map((item) => (
-              <div key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <div className="text-xs font-semibold uppercase text-slate-400">{item.label}</div>
-                {isEditing ? (
-                  <input
-                    type={item.key === "email" ? "email" : "text"}
-                    value={draft[item.key]}
-                    onChange={(event) =>
-                      setDraft((prev) => ({ ...prev, [item.key]: event.target.value }))
-                    }
-                    className="mt-1 w-full bg-transparent text-sm font-semibold text-slate-700 outline-none"
-                  />
-                ) : (
-                  <div className="mt-1 text-sm font-semibold text-slate-700">{profile[item.key]}</div>
-                )}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="text-xs font-semibold uppercase text-slate-400">First Name</div>
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={draft.firstName || ""}
+                  onChange={(e) => setDraft({ ...draft, firstName: e.target.value })}
+                  className="mt-1 w-full bg-transparent text-sm font-semibold text-slate-700 outline-none"
+                />
+              ) : (
+                <div className="mt-1 text-sm font-semibold text-slate-700">{profile?.firstName}</div>
+              )}
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="text-xs font-semibold uppercase text-slate-400">Last Name</div>
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={draft.lastName || ""}
+                  onChange={(e) => setDraft({ ...draft, lastName: e.target.value })}
+                  className="mt-1 w-full bg-transparent text-sm font-semibold text-slate-700 outline-none"
+                />
+              ) : (
+                <div className="mt-1 text-sm font-semibold text-slate-700">{profile?.lastName}</div>
+              )}
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="text-xs font-semibold uppercase text-slate-400">Email</div>
+              <div className="mt-1 text-sm font-semibold text-slate-400 cursor-not-allowed">{profile?.email}</div>
+              <div className="mt-0.5 text-[10px] text-slate-400 italic">Email cannot be changed</div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="text-xs font-semibold uppercase text-slate-400">Phone</div>
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={draft.phone || ""}
+                  onChange={(e) => setDraft({ ...draft, phone: e.target.value })}
+                  className="mt-1 w-full bg-transparent text-sm font-semibold text-slate-700 outline-none"
+                />
+              ) : (
+                <div className="mt-1 text-sm font-semibold text-slate-700">{profile?.phone || "Not set"}</div>
+              )}
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="text-xs font-semibold uppercase text-slate-400">Role</div>
+              <div className="mt-1 text-sm font-semibold text-slate-700">{profile?.role}</div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="text-xs font-semibold uppercase text-slate-400">Joined</div>
+              <div className="mt-1 text-sm font-semibold text-slate-700">
+                {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString() : "N/A"}
               </div>
-            ))}
+            </div>
           </div>
         </div>
 
@@ -166,15 +271,16 @@ const Profile = () => {
               </div>
               <div>
                 <div className="text-sm font-semibold text-slate-900">Primary Contact</div>
-                <p className="text-xs text-slate-500">Preferred channel</p>
+                <p className="text-xs text-slate-500">Official contact details</p>
               </div>
             </div>
             <div className="mt-4 space-y-2 text-sm text-slate-600">
-              <div className="flex items-center gap-2">
-                <FiMail className="text-slate-400" /> {profile.email}
+              <div className="flex items-center gap-2 overflow-hidden text-ellipsis">
+                <FiMail className="flex-shrink-0 text-slate-400" /> 
+                <span className="truncate">{profile?.email}</span>
               </div>
               <div className="flex items-center gap-2">
-                <FiPhone className="text-slate-400" /> {profile.phone}
+                <FiPhone className="flex-shrink-0 text-slate-400" /> {profile?.phone || "No phone linked"}
               </div>
             </div>
           </div>
@@ -185,19 +291,23 @@ const Profile = () => {
                 <FiCalendar />
               </div>
               <div>
-                <div className="text-sm font-semibold text-slate-900">Recent Activity</div>
-                <p className="text-xs text-slate-500">Last 7 days</p>
+                <div className="text-sm font-semibold text-slate-900">Last Session</div>
+                <p className="text-xs text-slate-500">Security & Access</p>
               </div>
             </div>
             <div className="mt-4 space-y-2 text-sm text-slate-600">
-              {["Updated booking policies", "Approved 2 branches", "Added new staff member"].map(
-                (item) => (
-                  <div key={item} className="flex items-center gap-2">
-                    <FiMapPin className="text-slate-400" />
-                    {item}
-                  </div>
-                )
-              )}
+              <div className="flex items-center gap-2">
+                <FiMapPin className="text-slate-400" />
+                <span>
+                  {profile?.lastLoginAt ? `Last login: ${new Date(profile.lastLoginAt).toLocaleString()}` : "First login session"}
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <FiShield className="mt-0.5 text-slate-400" />
+                <span className="text-xs leading-relaxed">
+                  Your account is protected by role-based access control.
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -207,3 +317,4 @@ const Profile = () => {
 };
 
 export default Profile;
+

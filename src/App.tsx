@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { RouterProvider } from "react-router-dom";
+import { Toaster } from "sonner";
 import { Router } from "./Router";
 import { ThemeProvider } from "./context/ThemeContext";
 import Loader from "./Components/loader";
@@ -8,6 +9,7 @@ import ErrorBoundary from "./ErrorBoundary";
 function App() {
   return (
     <ThemeProvider>
+      <Toaster position="top-right" richColors closeButton />
       <ErrorBoundary>
         <Suspense
           fallback={

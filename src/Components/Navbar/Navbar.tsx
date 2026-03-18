@@ -1,6 +1,7 @@
 import { FiBell, FiMenu, FiSearch } from "react-icons/fi";
 import { FiLogOut } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
+import { clearAuthSession } from "@/lib/auth";
 
 type NavbarProps = {
   showMenuButton?: boolean;
@@ -11,10 +12,7 @@ const Navbar = ({ showMenuButton = false, onMenuClick }: NavbarProps) => {
   const navigate = useNavigate();
 
   const handleSignOut = () => {
-    localStorage.removeItem("isAuthenticated");
-    localStorage.removeItem("auth_email");
-    localStorage.removeItem("auth_role");
-    localStorage.removeItem("auth_name");
+    clearAuthSession();
     navigate("/login");
   };
 

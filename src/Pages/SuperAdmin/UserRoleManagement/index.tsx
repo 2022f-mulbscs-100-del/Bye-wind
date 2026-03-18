@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { FiPlus, FiSearch, FiUsers } from "react-icons/fi";
+import { getJson } from "@/lib/api";
+import { isSessionActive } from "@/lib/auth";
 
 type UserRow = {
   name: string;
@@ -8,8 +10,26 @@ type UserRow = {
   status: "Active" | "Suspended" | "Pending";
 };
 
-type UserRoleData = {
-  users: UserRow[];
+type StaffEntry = {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  role: string;
+  restaurantId?: string | null;
+  isActive: boolean;
+};
+
+const formatUser = (staff: StaffEntry): UserRow => {
+  const name = [staff.firstName, staff.lastName].filter(Boolean).join(" ") || staff.email;
+  const role = staff.role.replace("_", " ");
+  const tenant = staff.restaurantId ? `Restaurant ${staff.restaurantId}` : "Platform";
+  return {
+    name,
+    role,
+    tenant,
+    status: staff.isActive ? "Active" : "Suspended",
+  };
 };
 
 const UserRoleManagement = () => {
@@ -28,13 +48,35 @@ const UserRoleManagement = () => {
 
   useEffect(() => {
     let mounted = true;
-    fetch("/DummyApis/user-role-management.json")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (!mounted || !json) return;
-        setUsers((json as UserRoleData).users ?? []);
+
+    const loadDummy = () => {
+      return fetch("/DummyApis/user-role-management.json")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((json) => {
+          if (!mounted || !json) return;
+          setUsers((json as { users: UserRow[] }).users ?? []);
+        })
+        .catch(() => null);
+    };
+
+    if (!isSessionActive()) {
+      loadDummy().finally(() => {
+        if (mounted) setLoading(false);
+      });
+      return () => {
+        mounted = false;
+      };
+    }
+
+    getJson<{ data: StaffEntry[] }>("/staff")
+      .then((response) => {
+        if (!mounted) return;
+        const list = (response.data ?? []).map(formatUser);
+        setUsers(list);
       })
-      .catch(() => null)
+      .catch(() => {
+        if (mounted) loadDummy();
+      })
       .finally(() => {
         if (mounted) setLoading(false);
       });

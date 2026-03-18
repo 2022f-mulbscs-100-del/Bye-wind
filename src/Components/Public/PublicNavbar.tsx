@@ -2,21 +2,19 @@ import { useState } from "react";
 import { FiLogOut } from "react-icons/fi";
 import { FiSearch } from "react-icons/fi";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { clearAuthSession, isSessionActive } from "@/lib/auth";
 
 
 const PublicNavbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const isAuthenticated = localStorage.getItem("isAuthenticated") === "true";
+  const isAuthenticated = isSessionActive();
   const [searchTerm, setSearchTerm] = useState(
     () => new URLSearchParams(location.search).get("q") ?? ""
   );
 
   const handleSignOut = () => {
-    localStorage.removeItem("isAuthenticated");
-    localStorage.removeItem("auth_email");
-    localStorage.removeItem("auth_role");
-    localStorage.removeItem("auth_name");
+    clearAuthSession();
     navigate("/login");
   };
 

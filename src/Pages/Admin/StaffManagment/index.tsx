@@ -1,152 +1,262 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
-import {
-  FiCalendar,
-  FiEdit2,
-  FiMail,
-  FiMoreHorizontal,
-  FiPhone,
-  FiPlus,
-  FiTrash2,
-  FiUser,
-} from "react-icons/fi";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { FiEdit2, FiPlus, FiTrash2 } from "react-icons/fi";
+import { postJson, getJson, putJson } from "@/lib/api";
+import { getStoredRestaurantId, isSessionActive } from "@/lib/auth";
+import { useBranchContext } from "@/context/BranchContext";
 
-type Staff = {
+type StaffRole = "SUPER_ADMIN" | "OWNER" | "HOST" | "STAFF";
+
+type StaffRecord = {
   id: string;
-  name: string;
-  role: string;
-  availability: string;
-  location: string;
-  phone: string;
+  firstName: string;
+  lastName: string;
   email: string;
+  phone?: string | null;
+  role: StaffRole;
+  isActive: boolean;
+  restaurantId?: string | null;
+  createdAt?: string;
 };
 
-const initialStaff: Staff[] = [
+type StaffDetail = StaffRecord & {
+  permissions?: Record<string, boolean> | null;
+  branches?: { branchId: string; isPrimary: boolean }[];
+  lastLoginAt?: string | null;
+  updatedAt?: string;
+};
+
+type StaffForm = StaffDetail & {
+  password?: string;
+};
+
+const FALLBACK_STAFF: StaffRecord[] = [
   {
     id: "s1",
-    name: "Ava Collins",
-    role: "General Manager",
-    availability: "Full-time",
-    location: "Downtown",
-    phone: "(415) 555-2033",
+    firstName: "Ava",
+    lastName: "Collins",
     email: "ava.collins@byewind.com",
+    role: "OWNER",
+    phone: "+1 (415) 555-2033",
+    isActive: true,
   },
   {
     id: "s2",
-    name: "Liam Patel",
-    role: "Head Chef",
-    availability: "Full-time",
-    location: "Uptown",
-    phone: "(415) 555-8192",
+    firstName: "Liam",
+    lastName: "Patel",
     email: "liam.patel@byewind.com",
+    role: "HOST",
+    phone: "+1 (415) 555-8192",
+    isActive: true,
   },
   {
     id: "s3",
-    name: "Maya Brooks",
-    role: "Floor Manager",
-    availability: "Part-time",
-    location: "Marina",
-    phone: "(415) 555-7788",
+    firstName: "Maya",
+    lastName: "Brooks",
     email: "maya.brooks@byewind.com",
-  },
-  {
-    id: "s4",
-    name: "Noah Patel",
-    role: "Server",
-    availability: "Weekends",
-    location: "Downtown",
-    phone: "(415) 555-1122",
-    email: "noah.patel@byewind.com",
+    role: "STAFF",
+    phone: "+1 (415) 555-7788",
+    isActive: true,
   },
 ];
 
-const emptyStaff: Staff = {
-  id: "new",
-  name: "",
-  role: "",
-  availability: "",
-  location: "",
-  phone: "",
-  email: "",
-};
+const ROLE_OPTIONS: StaffRole[] = ["HOST", "STAFF", "OWNER"];
+const DEFAULT_ROLE: StaffRole = "HOST";
 
 const StaffManagment = () => {
-  const [staffList, setStaffList] = useState<Staff[]>(initialStaff);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [draftStaff, setDraftStaff] = useState<Staff | null>(null);
+  const { selectedBranchId } = useBranchContext();
+  const [staffList, setStaffList] = useState<StaffRecord[]>(FALLBACK_STAFF);
+  const [selectedStaff, setSelectedStaff] = useState<StaffForm | null>(null);
   const [formError, setFormError] = useState("");
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [formLoading, setFormLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [showFormModal, setShowFormModal] = useState(false);
 
-  const openCreateForm = () => {
-    setEditingId("new");
-    setDraftStaff({ ...emptyStaff });
-    setFormError("");
-    setOpenMenuId(null);
-  };
+  const restaurantId = getStoredRestaurantId();
+  const apiHeaders = useMemo(
+    () => (restaurantId ? { "x-restaurant-id": restaurantId } : undefined),
+    [restaurantId]
+  );
 
-  const openEditForm = (staff: Staff) => {
-    setEditingId(staff.id);
-    setDraftStaff({ ...staff });
+  useEffect(() => {
+    let mounted = true;
+    const fetchStaff = async () => {
+      if (!isSessionActive()) {
+        setListLoading(false);
+        return;
+      }
+      try {
+        const url = `/staff${selectedBranchId ? `?branchId=${selectedBranchId}` : ""}`;
+        const response = await getJson<StaffRecord[]>(url, {
+          headers: apiHeaders,
+        });
+        if (!mounted) return;
+        setStaffList(response.data ?? FALLBACK_STAFF);
+      } catch (error) {
+        console.error("Unable to load staff list", error);
+      } finally {
+        if (mounted) setListLoading(false);
+      }
+    };
+    fetchStaff();
+    return () => {
+      mounted = false;
+    };
+  }, [apiHeaders, selectedBranchId]);
+
+  const formattedList = useMemo(() => staffList, [staffList]);
+
+  const openForm = async (staff?: StaffRecord, create = false) => {
+    setIsCreating(create);
     setFormError("");
-    setOpenMenuId(null);
+    const needsDetail = Boolean(staff && !create);
+    setIsDetailLoading(needsDetail);
+
+    const baseline: StaffForm = staff
+      ? {
+          ...staff,
+          phone: staff.phone ?? "",
+          restaurantId: staff.restaurantId ?? restaurantId ?? null,
+          permissions: null,
+          branches: [],
+          password: "",
+        }
+      : {
+          id: "new",
+          firstName: "",
+          lastName: "",
+          email: "",
+          phone: "",
+          role: DEFAULT_ROLE,
+          isActive: true,
+          restaurantId: restaurantId ?? null,
+          permissions: {},
+          branches: [],
+          password: "",
+        };
+
+    setSelectedStaff(baseline);
+    setShowFormModal(true);
+
+    if (needsDetail && staff) {
+      try {
+        const response = await getJson<StaffDetail>(`/staff/${staff.id}`, {
+          headers: apiHeaders,
+        });
+        setSelectedStaff((prev) =>
+          prev
+            ? { ...prev, ...response.data, password: "" }
+            : { ...response.data, password: "" }
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unable to load staff details.";
+        setFormError(message);
+      } finally {
+        setIsDetailLoading(false);
+      }
+    } else {
+      setIsDetailLoading(false);
+    }
   };
 
   const closeForm = () => {
-    setEditingId(null);
-    setDraftStaff(null);
+    setSelectedStaff(null);
     setFormError("");
+    setFormLoading(false);
+    setIsCreating(false);
+    setIsDetailLoading(false);
+    setShowFormModal(false);
   };
 
-  const handleSave = () => {
-    if (!draftStaff) return;
+  const fullName = (staff: StaffRecord) => `${staff.firstName} ${staff.lastName}`;
+  const roleOptions = useMemo(() => {
+    if (!selectedStaff) return ROLE_OPTIONS;
+    return Array.from(new Set([...ROLE_OPTIONS, selectedStaff.role]));
+  }, [selectedStaff]);
 
-    const next = {
-      ...draftStaff,
-      name: draftStaff.name.trim(),
-      role: draftStaff.role.trim(),
-      availability: draftStaff.availability.trim(),
-      location: draftStaff.location.trim(),
-      phone: draftStaff.phone.trim(),
-      email: draftStaff.email.trim().toLowerCase(),
+  const handleSave = async () => {
+    if (!selectedStaff) return;
+
+    const trimmedFirstName = selectedStaff.firstName.trim();
+    const trimmedLastName = selectedStaff.lastName.trim();
+    const trimmedEmail = selectedStaff.email.trim().toLowerCase();
+
+    if (!trimmedFirstName || !trimmedLastName || (isCreating && !trimmedEmail)) {
+      setFormError("First name, last name, and email are required.");
+      return;
+    }
+
+    const basePayload = {
+      firstName: trimmedFirstName,
+      lastName: trimmedLastName,
+      phone: selectedStaff.phone?.trim() || null,
+      role: selectedStaff.role,
+      isActive: selectedStaff.isActive,
     };
 
-    if (!next.name || !next.role || !next.email) {
-      setFormError("Name, role, and email are required.");
-      return;
+    if (isCreating) {
+      if (!selectedStaff.password || selectedStaff.password.length < 8) {
+        setFormError("Password must be at least 8 characters.");
+        return;
+      }
     }
 
-    const duplicateEmail = staffList.some(
-      (staff) => staff.email.toLowerCase() === next.email && staff.id !== next.id
-    );
-    if (duplicateEmail) {
-      setFormError("A staff member with this email already exists.");
-      return;
-    }
+    setFormLoading(true);
+    const toastId = toast.loading(isCreating ? "Registering staff..." : "Updating staff...");
+    try {
+      if (isCreating) {
+        const registerResponse = await postJson<{ staff: StaffRecord; token: string }>(
+          "/staff/register",
+          {
+            ...basePayload,
+            email: trimmedEmail,
+            password: selectedStaff.password,
+            restaurantId: restaurantId ?? undefined,
+          },
+          { headers: apiHeaders }
+        );
 
-    if (editingId === "new") {
-      const nextIdNumber =
-        Math.max(
-          ...staffList.map((staff) => {
-            const parsed = Number(staff.id.replace("s", ""));
-            return Number.isFinite(parsed) ? parsed : 0;
-          }),
-          0
-        ) + 1;
-      const created = { ...next, id: `s${nextIdNumber}` };
-      setStaffList((prev) => [created, ...prev]);
+        setStaffList((prev) => [registerResponse.data.staff, ...prev]);
+        toast.success("Staff registered successfully!", { id: toastId });
+      } else {
+        const updateResponse = await putJson<{ staff: StaffRecord }>(
+          `/staff/${selectedStaff.id}`,
+          basePayload,
+          { headers: apiHeaders }
+        );
+
+        setStaffList((prev) =>
+          prev.map((staff) =>
+            staff.id === selectedStaff.id ? { ...staff, ...updateResponse.data.staff } : staff
+          )
+        );
+        toast.success("Staff updated successfully!", { id: toastId });
+      }
       closeForm();
-      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to save staff.";
+      setFormError(message);
+      toast.error(message, { id: toastId });
+    } finally {
+      setFormLoading(false);
     }
-
-    setStaffList((prev) =>
-      prev.map((staff) => (staff.id === next.id ? next : staff))
-    );
-    closeForm();
   };
 
-  const handleDelete = (id: string) => {
-    setStaffList((prev) => prev.filter((staff) => staff.id !== id));
-    if (editingId === id) closeForm();
+  const handleDeactivate = async (id: string) => {
+    const toastId = toast.loading("Deactivating staff...");
+    try {
+      await putJson(`/staff/${id}`, { isActive: false }, { headers: apiHeaders });
+      setStaffList((prev) =>
+        prev.map((staff) => (staff.id === id ? { ...staff, isActive: false } : staff))
+      );
+      toast.success("Staff deactivated.", { id: toastId });
+    } catch (error: any) {
+      console.error("Unable to deactivate staff", error);
+      toast.error(error.message || "Failed to deactivate staff.", { id: toastId });
+    }
   };
 
   return (
@@ -156,190 +266,229 @@ const StaffManagment = () => {
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
             Staff
           </div>
-          <div className="mt-1 text-2xl font-semibold text-slate-900">
-            Staff Managment
-          </div>
+          <div className="mt-1 text-2xl font-semibold text-slate-900">Staff Management</div>
           <p className="mt-2 text-sm text-slate-500">
-            View staff roles, availability, and profiles.
+            Manage staff profiles, roles, and access.
           </p>
         </div>
         <button
           type="button"
-          onClick={openCreateForm}
+          onClick={() => void openForm(undefined, true)}
           className="flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-800"
         >
           <FiPlus />
-          Add New Member
+          Add Staff
         </button>
       </div>
 
-      {draftStaff && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm font-semibold text-slate-900">
-              {editingId === "new" ? "New Staff Member" : "Edit Staff Member"}
-            </div>
-            <button
-              type="button"
-              onClick={closeForm}
-              className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-            >
-              Cancel
-            </button>
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        {listLoading ? (
+          <div className="text-sm text-slate-500">Loading staff…</div>
+        ) : (
+          <div className="overflow-x-auto overflow-y-auto max-h-[400px]">
+            <table className="min-w-full text-left text-sm text-slate-600">
+              <thead className="text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3">Role</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {formattedList.map((staff) => (
+                  <tr key={staff.id} className="border-t border-slate-100">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-slate-900">{fullName(staff)}</div>
+                      <div className="text-xs text-slate-500">{staff.createdAt ? new Date(staff.createdAt).toLocaleDateString() : ""}</div>
+                    </td>
+                    <td className="px-4 py-3">{staff.email}</td>
+                    <td className="px-4 py-3">
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold uppercase text-slate-600">
+                        {staff.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                          staff.isActive ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
+                        }`}
+                      >
+                        {staff.isActive ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void openForm(staff)}
+                          className="rounded-full border border-slate-200 bg-white p-2 text-slate-400 hover:border-slate-300"
+                        >
+                          <FiEdit2 />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeactivate(staff.id)}
+                          className="rounded-full border border-slate-200 bg-white p-2 text-rose-500 hover:border-rose-300"
+                        >
+                          <FiTrash2 />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            {[
-              { label: "Name", key: "name" },
-              { label: "Role", key: "role" },
-              { label: "Availability", key: "availability" },
-              { label: "Location", key: "location" },
-              { label: "Phone", key: "phone" },
-              { label: "Email", key: "email" },
-            ].map((field) => (
-              <label
-                key={field.key}
-                className="space-y-1 text-xs font-semibold text-slate-500"
+        )}
+      </div>
+
+      {showFormModal && selectedStaff && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/60 p-4">
+        <div className="relative w-full max-w-3xl rounded-3xl border border-slate-200 bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div className="text-lg font-semibold text-slate-900">
+                {isCreating ? "Register Staff" : "Update Staff"}
+              </div>
+              <button
+                type="button"
+                onClick={closeForm}
+                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
               >
-                {field.label}
+                Cancel
+              </button>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label className="text-xs text-slate-500">
+                First name
                 <input
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
-                  value={draftStaff[field.key as keyof Staff] as string}
+                  type="text"
+                  autoComplete="off"
+                  value={selectedStaff.firstName}
                   onChange={(event) =>
-                    setDraftStaff((prev) =>
+                    setSelectedStaff((prev) => (prev ? { ...prev, firstName: event.target.value } : prev))
+                  }
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400"
+                />
+              </label>
+              <label className="text-xs text-slate-500">
+                Last name
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={selectedStaff.lastName}
+                  onChange={(event) =>
+                    setSelectedStaff((prev) => (prev ? { ...prev, lastName: event.target.value } : prev))
+                  }
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400"
+                />
+              </label>
+              <label className="text-xs text-slate-500 md:col-span-2">
+                Email
+                <input
+                  type="email"
+                  autoComplete="off"
+                  value={selectedStaff.email}
+                  onChange={(event) =>
+                    setSelectedStaff((prev) => (prev ? { ...prev, email: event.target.value } : prev))
+                  }
+                  disabled={!isCreating}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
+                />
+              </label>
+              <label className="text-xs text-slate-500">
+                Phone
+                <input
+                  type="tel"
+                  autoComplete="off"
+                  value={selectedStaff.phone ?? ""}
+                  onChange={(event) =>
+                    setSelectedStaff((prev) => (prev ? { ...prev, phone: event.target.value } : prev))
+                  }
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400"
+                />
+              </label>
+              <label className="text-xs text-slate-500">
+                Role
+                <select
+                  value={selectedStaff.role}
+                  onChange={(event) =>
+                    setSelectedStaff((prev) => (prev ? { ...prev, role: event.target.value as StaffRole } : prev))
+                  }
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400"
+                >
+                  {roleOptions.map((role) => (
+                    <option key={role} value={role}>
+                      {role.replace("_", " ")}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs text-slate-500">
+                Status
+                <select
+                  value={selectedStaff.isActive ? "active" : "inactive"}
+                  onChange={(event) =>
+                    setSelectedStaff((prev) =>
                       prev
-                        ? ({
-                            ...prev,
-                            [field.key]: event.target.value,
-                          } as Staff)
+                        ? { ...prev, isActive: event.target.value === "active" }
                         : prev
                     )
                   }
-                />
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400"
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
               </label>
-            ))}
-          </div>
-          {formError ? (
-            <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
-              {formError}
+              {isCreating && (
+                <label className="text-xs text-slate-500 md:col-span-2">
+                  Password
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={selectedStaff.password ?? ""}
+                    onChange={(event) =>
+                      setSelectedStaff((prev) =>
+                        prev ? { ...prev, password: event.target.value } : prev
+                      )
+                    }
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400"
+                  />
+                </label>
+              )}
             </div>
-          ) : null}
-          <div className="mt-4 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleSave}
-              className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={closeForm}
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-            >
-              Cancel
-            </button>
+            {formError && (
+              <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                {formError}
+              </div>
+            )}
+            <div className="mt-4 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeForm}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={formLoading || isDetailLoading}
+                className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+              >
+                {formLoading ? "Saving…" : isCreating ? "Register Staff" : "Save Changes"}
+              </button>
+            </div>
+            {isDetailLoading && (
+              <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center rounded-3xl bg-white/80 text-sm font-semibold text-slate-600 backdrop-blur-sm">
+                Loading staff details…
+              </div>
+            )}
           </div>
         </div>
       )}
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase text-slate-400">
-              <tr>
-                <th className="pb-3 font-medium">Staff</th>
-                <th className="pb-3 font-medium">Role</th>
-                <th className="pb-3 font-medium">Availability</th>
-                <th className="pb-3 font-medium">Location</th>
-                <th className="pb-3 font-medium">Contact</th>
-                <th className="pb-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="text-slate-600">
-              {staffList.map((staff) => (
-                <tr key={staff.id} className="border-t border-slate-100">
-                  <td className="py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-500">
-                        <FiUser />
-                      </div>
-                      <div>
-                        <div className="font-semibold text-slate-900">
-                          {staff.name}
-                        </div>
-                        <div className="text-xs text-slate-500">{staff.email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-3 font-medium text-slate-700">{staff.role}</td>
-                  <td className="py-3">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                      <FiCalendar className="text-slate-400" />
-                      {staff.availability}
-                    </span>
-                  </td>
-                  <td className="py-3 text-slate-500">{staff.location}</td>
-                  <td className="py-3">
-                    <div className="flex flex-col gap-1 text-xs text-slate-500">
-                      <span className="inline-flex items-center gap-1">
-                        <FiPhone className="text-slate-400" /> {staff.phone}
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <FiMail className="text-slate-400" /> {staff.email}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="py-3">
-                    <div className="relative inline-flex">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setOpenMenuId((prev) => (prev === staff.id ? null : staff.id))
-                        }
-                        className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                      >
-                        <FiMoreHorizontal />
-                      </button>
-                      {openMenuId === staff.id && (
-                        <div className="absolute right-0 top-10 z-10 w-40 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
-                      <Link
-                        to={`/dashboard/staff/${staff.id}`}
-                        className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-600 hover:bg-slate-50"
-                        onClick={() => setOpenMenuId(null)}
-                      >
-                            View profile
-                          </Link>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              openEditForm(staff);
-                            }}
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-600 hover:bg-slate-50"
-                          >
-                            <FiEdit2 />
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleDelete(staff.id);
-                              setOpenMenuId(null);
-                            }}
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-rose-600 hover:bg-rose-50"
-                          >
-                            <FiTrash2 />
-                            Delete
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 };

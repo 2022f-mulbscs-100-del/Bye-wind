@@ -18,6 +18,7 @@ import {
   FiLogOut,
 } from "react-icons/fi";
 import { useScreenSize } from "../customHooks/ScreenSize";
+import { clearAuthSession } from "@/lib/auth";
 
 const superAdminLinks = [
   { label: "Dashboard", path: "/super-admin", icon: FiActivity },
@@ -44,10 +45,7 @@ const SuperAdminLayout = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const handleSignOut = () => {
-    localStorage.removeItem("isAuthenticated");
-    localStorage.removeItem("auth_email");
-    localStorage.removeItem("auth_role");
-    localStorage.removeItem("auth_name");
+    clearAuthSession();
     navigate("/login");
   };
 
