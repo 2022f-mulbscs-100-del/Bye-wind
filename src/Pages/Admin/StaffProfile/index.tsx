@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { FiHome, FiMail, FiPhone, FiUserCheck } from "react-icons/fi";
+import { FiHome, FiMail, FiPhone, FiUserCheck, FiKey, FiCopy } from "react-icons/fi";
+import { toast } from "sonner";
 import { getStoredRestaurantId, isSessionActive } from "@/lib/auth";
 import { getJson } from "@/lib/api";
 import Loader from "@/Components/loader";
@@ -19,10 +20,12 @@ type StaffDetail = {
   firstName: string;
   lastName: string;
   email: string;
+  staffUsername?: string;
   phone: string | null;
   role: string;
   isActive: boolean;
   createdAt: string;
+  staffCredentialCreatedAt?: string;
   branches: BranchAssignment[];
 };
 
@@ -65,6 +68,11 @@ const StaffProfile = () => {
       mounted = false;
     };
   }, [id, restaurantId]);
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success("Copied to clipboard!");
+  };
 
   if (isLoading) {
     return (
@@ -171,6 +179,41 @@ const StaffProfile = () => {
           )}
         </div>
       </div>
+
+      {staff.staffUsername && (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
+          <div className="mb-4 flex items-center gap-2">
+            <FiKey className="text-blue-600" />
+            <span className="text-sm font-bold uppercase tracking-wider text-blue-600">Login Credentials</span>
+          </div>
+          <div className="space-y-3">
+            <div className="rounded-xl bg-white p-3 border border-white shadow-sm">
+              <div className="text-[10px] font-bold uppercase text-slate-400">Username</div>
+              <div className="mt-1 flex items-center justify-between">
+                <div className="font-semibold text-slate-900 font-mono">{staff.staffUsername}</div>
+                <button
+                  onClick={() => copyToClipboard(staff.staffUsername || '')}
+                  className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-slate-600 hover:bg-slate-200"
+                >
+                  <FiCopy className="text-xs" />
+                  <span className="text-xs font-semibold">Copy</span>
+                </button>
+              </div>
+            </div>
+            <div className="rounded-xl bg-white p-3 border border-white shadow-sm">
+              <div className="text-[10px] font-bold uppercase text-slate-400">Credentials Created</div>
+              <div className="mt-1 font-semibold text-slate-900">
+                {staff.staffCredentialCreatedAt 
+                  ? new Date(staff.staffCredentialCreatedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+                  : 'N/A'}
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 rounded-lg bg-white p-3 border border-blue-100 text-xs text-slate-600">
+            ℹ️ Staff members use their username and password to log in to the staff portal.
+          </div>
+        </div>
+      )}
       
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">System Information</div>

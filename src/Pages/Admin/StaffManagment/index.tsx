@@ -12,22 +12,29 @@ type StaffRecord = {
   firstName: string;
   lastName: string;
   email: string;
+  staffUsername?: string;
   phone?: string | null;
   role: StaffRole;
   isActive: boolean;
   restaurantId?: string | null;
   createdAt?: string;
+  staffCredentialCreatedAt?: string;
+  branches?: Array<{
+    branchId: string;
+    isPrimary: boolean;
+    branch?: { id: string; name: string };
+  }>;
 };
 
 type StaffDetail = StaffRecord & {
   permissions?: Record<string, boolean> | null;
-  branches?: { branchId: string; isPrimary: boolean }[];
   lastLoginAt?: string | null;
   updatedAt?: string;
 };
 
 type StaffForm = StaffDetail & {
   password?: string;
+  selectedBranchId?: string | null;
 };
 
 const FALLBACK_STAFF: StaffRecord[] = [
@@ -36,6 +43,7 @@ const FALLBACK_STAFF: StaffRecord[] = [
     firstName: "Ava",
     lastName: "Collins",
     email: "ava.collins@byewind.com",
+    staffUsername: "ava.collins",
     role: "OWNER",
     phone: "+1 (415) 555-2033",
     isActive: true,
@@ -45,17 +53,9 @@ const FALLBACK_STAFF: StaffRecord[] = [
     firstName: "Liam",
     lastName: "Patel",
     email: "liam.patel@byewind.com",
+    staffUsername: "liam.patel",
     role: "HOST",
     phone: "+1 (415) 555-8192",
-    isActive: true,
-  },
-  {
-    id: "s3",
-    firstName: "Maya",
-    lastName: "Brooks",
-    email: "maya.brooks@byewind.com",
-    role: "STAFF",
-    phone: "+1 (415) 555-7788",
     isActive: true,
   },
 ];
@@ -64,7 +64,7 @@ const ROLE_OPTIONS: StaffRole[] = ["HOST", "STAFF", "OWNER"];
 const DEFAULT_ROLE: StaffRole = "HOST";
 
 const StaffManagment = () => {
-  const { selectedBranchId } = useBranchContext();
+  const { selectedBranchId, branches } = useBranchContext();
   const [staffList, setStaffList] = useState<StaffRecord[]>(FALLBACK_STAFF);
   const [selectedStaff, setSelectedStaff] = useState<StaffForm | null>(null);
   const [formError, setFormError] = useState("");
@@ -88,7 +88,7 @@ const StaffManagment = () => {
         return;
       }
       try {
-        const url = `/staff${selectedBranchId ? `?branchId=${selectedBranchId}` : ""}`;
+        const url = `/staff`;
         const response = await getJson<StaffRecord[]>(url, {
           headers: apiHeaders,
         });
@@ -104,7 +104,7 @@ const StaffManagment = () => {
     return () => {
       mounted = false;
     };
-  }, [apiHeaders, selectedBranchId]);
+  }, [apiHeaders]);
 
   const formattedList = useMemo(() => staffList, [staffList]);
 
@@ -121,6 +121,7 @@ const StaffManagment = () => {
           restaurantId: staff.restaurantId ?? restaurantId ?? null,
           permissions: null,
           branches: [],
+          selectedBranchId: staff.branches?.[0]?.branchId ?? null,
           password: "",
         }
       : {
@@ -128,12 +129,14 @@ const StaffManagment = () => {
           firstName: "",
           lastName: "",
           email: "",
+          staffUsername: "",
           phone: "",
           role: DEFAULT_ROLE,
           isActive: true,
           restaurantId: restaurantId ?? null,
           permissions: {},
           branches: [],
+          selectedBranchId: selectedBranchId,
           password: "",
         };
 
@@ -147,8 +150,13 @@ const StaffManagment = () => {
         });
         setSelectedStaff((prev) =>
           prev
-            ? { ...prev, ...response.data, password: "" }
-            : { ...response.data, password: "" }
+            ? { 
+                ...prev, 
+                ...response.data, 
+                password: "",
+                selectedBranchId: response.data.branches?.[0]?.branchId ?? null
+              }
+            : { ...response.data, password: "", selectedBranchId: response.data.branches?.[0]?.branchId ?? null }
         );
       } catch (error) {
         const message =
@@ -177,6 +185,12 @@ const StaffManagment = () => {
     return Array.from(new Set([...ROLE_OPTIONS, selectedStaff.role]));
   }, [selectedStaff]);
 
+  const getBranchInfo = (staff: StaffRecord) => {
+    if (!staff.branches || staff.branches.length === 0) return "No branch assigned";
+    const primaryBranch = staff.branches[0];
+    return primaryBranch.branch?.name || 'Unknown';
+  };
+
   const handleSave = async () => {
     if (!selectedStaff) return;
 
@@ -189,12 +203,18 @@ const StaffManagment = () => {
       return;
     }
 
+    // Ensure branchId is null if empty string
+    const branchId = selectedStaff.selectedBranchId && selectedStaff.selectedBranchId.trim() !== "" 
+      ? selectedStaff.selectedBranchId 
+      : null;
+
     const basePayload = {
       firstName: trimmedFirstName,
       lastName: trimmedLastName,
       phone: selectedStaff.phone?.trim() || null,
       role: selectedStaff.role,
       isActive: selectedStaff.isActive,
+      branchId,
     };
 
     if (isCreating) {
@@ -208,31 +228,38 @@ const StaffManagment = () => {
     const toastId = toast.loading(isCreating ? "Registering staff..." : "Updating staff...");
     try {
       if (isCreating) {
+        const payload = {
+          ...basePayload,
+          email: trimmedEmail,
+          password: selectedStaff.password,
+          restaurantId: restaurantId ?? undefined,
+        };
+        console.log('Creating staff with payload:', payload);
         const registerResponse = await postJson<{ staff: StaffRecord; token: string }>(
           "/staff/register",
-          {
-            ...basePayload,
-            email: trimmedEmail,
-            password: selectedStaff.password,
-            restaurantId: restaurantId ?? undefined,
-          },
+          payload,
           { headers: apiHeaders }
         );
 
-        setStaffList((prev) => [registerResponse.data.staff, ...prev]);
+        const newStaff = registerResponse.data.staff;
+        setStaffList((prev) => [newStaff, ...prev]);
         toast.success("Staff registered successfully!", { id: toastId });
       } else {
-        const updateResponse = await putJson<{ staff: StaffRecord }>(
+        console.log('Updating staff with payload:', basePayload);
+        const updateResponse = await putJson<StaffRecord>(
           `/staff/${selectedStaff.id}`,
           basePayload,
           { headers: apiHeaders }
         );
 
+        const updatedStaff = updateResponse.data;
+        console.log('Update response:', updatedStaff);
         setStaffList((prev) =>
           prev.map((staff) =>
-            staff.id === selectedStaff.id ? { ...staff, ...updateResponse.data.staff } : staff
+            staff.id === selectedStaff.id ? { ...staff, ...updatedStaff, branches: updatedStaff.branches || [] } : staff
           )
         );
+
         toast.success("Staff updated successfully!", { id: toastId });
       }
       closeForm();
@@ -253,6 +280,7 @@ const StaffManagment = () => {
         prev.map((staff) => (staff.id === id ? { ...staff, isActive: false } : staff))
       );
       toast.success("Staff deactivated.", { id: toastId });
+      //eslint-disable-next-line
     } catch (error: any) {
       console.error("Unable to deactivate staff", error);
       toast.error(error.message || "Failed to deactivate staff.", { id: toastId });
@@ -268,7 +296,7 @@ const StaffManagment = () => {
           </div>
           <div className="mt-1 text-2xl font-semibold text-slate-900">Staff Management</div>
           <p className="mt-2 text-sm text-slate-500">
-            Manage staff profiles, roles, and access.
+            Manage staff profiles, roles, branches, and access credentials.
           </p>
         </div>
         <button
@@ -285,13 +313,15 @@ const StaffManagment = () => {
         {listLoading ? (
           <div className="text-sm text-slate-500">Loading staff…</div>
         ) : (
-          <div className="overflow-x-auto overflow-y-auto max-h-[400px]">
+          <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
             <table className="min-w-full text-left text-sm text-slate-600">
-              <thead className="text-xs uppercase tracking-wide text-slate-500">
+              <thead className="text-xs uppercase tracking-wide text-slate-500 sticky top-0 bg-white">
                 <tr>
                   <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Username</th>
                   <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3">Role</th>
+                  <th className="px-4 py-3">Branches</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Actions</th>
                 </tr>
@@ -303,11 +333,18 @@ const StaffManagment = () => {
                       <div className="font-medium text-slate-900">{fullName(staff)}</div>
                       <div className="text-xs text-slate-500">{staff.createdAt ? new Date(staff.createdAt).toLocaleDateString() : ""}</div>
                     </td>
+                    <td className="px-4 py-3">
+                      <div className="text-sm font-medium text-slate-700">{staff.staffUsername || 'N/A'}</div>
+                      <div className="text-xs text-slate-500">Created: {staff.staffCredentialCreatedAt ? new Date(staff.staffCredentialCreatedAt).toLocaleDateString() : 'N/A'}</div>
+                    </td>
                     <td className="px-4 py-3">{staff.email}</td>
                     <td className="px-4 py-3">
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold uppercase text-slate-600">
                         {staff.role}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-sm text-slate-700 font-medium">{getBranchInfo(staff)}</div>
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -458,6 +495,64 @@ const StaffManagment = () => {
                   />
                 </label>
               )}
+              
+              {!isCreating && selectedStaff.staffUsername && (
+                <div className="md:col-span-2 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="text-xs font-semibold text-slate-600 uppercase">Login Credentials</div>
+                  <div className="mt-2 space-y-2">
+                    <div>
+                      <div className="text-xs text-slate-500">Username</div>
+                      <div className="text-sm font-medium text-slate-900 flex items-center gap-2">
+                        {selectedStaff.staffUsername}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(selectedStaff.staffUsername || '');
+                            toast.success('Username copied!');
+                          }}
+                          className="text-xs text-slate-500 hover:text-slate-700"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500">Created</div>
+                      <div className="text-sm font-medium text-slate-900">
+                        {selectedStaff.staffCredentialCreatedAt 
+                          ? new Date(selectedStaff.staffCredentialCreatedAt).toLocaleDateString() 
+                          : 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="md:col-span-2">
+                <label className="text-xs text-slate-500 block">
+                  Assign to Branch
+                  <select
+                    value={selectedStaff.selectedBranchId ?? ""}
+                    onChange={(e) =>
+                      setSelectedStaff((prev) =>
+                        prev ? { ...prev, selectedBranchId: e.target.value || null } : prev
+                      )
+                    }
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400"
+                  >
+                    <option value="">-- No branch assigned --</option>
+                    {branches && branches.length > 0 ? (
+                      branches.map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </option>
+                      ))
+                    ) : (
+                      <option disabled>No branches available</option>
+                    )}
+                  </select>
+                </label>
+              </div>
             </div>
             {formError && (
               <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">

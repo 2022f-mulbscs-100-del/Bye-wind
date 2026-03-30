@@ -1,23 +1,42 @@
 import { useEffect, useState } from "react";
-import { Outlet, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import SideBar from "./Components/Sidebar/Sidebar";
 import Navbar from "./Components/Navbar/Navbar";
+import StatusBanner from "./Components/StatusBanner";
 import ErrorBoundary from "./ErrorBoundary";
 import { useScreenSize } from "./customHooks/ScreenSize";
-import { BranchProvider } from "./context/BranchContext";
+import { BranchProvider, useBranchContext } from "./context/BranchContext";
+import { GoLiveProvider, useGoLiveContext } from "./context/GoLiveContext";
+import OnboardingGuard from "./Components/OnboardingGuard";
+import Loader from "./Components/loader";
 
-const Layout = () => {
+const LayoutContent = () => {
   const size = useScreenSize();
   const location = useLocation();
   const isMobile = size <= 900;
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  
+  const { isLoadingGoLive, goLiveStatus } = useGoLiveContext();
+  const { isLoadingBranches } = useBranchContext();
 
   useEffect(() => {
     setIsSidebarOpen(false);
   }, [location.pathname, isMobile]);
 
+  // Unified loading state for "critical" initialization data
+  if ((isLoadingGoLive && !goLiveStatus) || isLoadingBranches) {
+    return (
+      <div className="flex h-screen w-full flex-col items-center justify-center bg-slate-50 gap-4">
+        <Loader size={48} />
+        <div className="animate-pulse text-xs font-bold uppercase tracking-widest text-slate-400">
+          Syncing Restaurant Engine...
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-100">
+    <div className="flex h-screen overflow-hidden bg-slate-100 animate-in fade-in duration-700">
       {!isMobile && (
         <div className="p-4 z-[100]">
           <ErrorBoundary>
@@ -29,6 +48,7 @@ const Layout = () => {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col p-4">
+        <StatusBanner />
         <div className="shrink-0">
           <Navbar
             showMenuButton={isMobile}
@@ -36,7 +56,7 @@ const Layout = () => {
           />
         </div>
         <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-3">
-          <Outlet />
+          <OnboardingGuard />
         </div>
       </div>
 
@@ -66,9 +86,11 @@ const Layout = () => {
 };
 
 const WrappedLayout = () => (
-  <BranchProvider>
-    <Layout />
-  </BranchProvider>
+  <GoLiveProvider>
+    <BranchProvider>
+      <LayoutContent />
+    </BranchProvider>
+  </GoLiveProvider>
 );
 
 export default WrappedLayout;

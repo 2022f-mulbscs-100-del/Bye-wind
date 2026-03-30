@@ -1,7 +1,6 @@
 import { lazy } from "react";
 import { createBrowserRouter } from "react-router-dom";
 import ProtectedRoute from "./Components/ProtectedRoute";
-
 const Layout = lazy(() => import("./Layout"));
 const Dashboard = lazy(() => import("./Pages/Admin/Dashboard/index"));
 const Analytics = lazy(() => import("./Pages/Admin/Analytics/index"));
@@ -9,9 +8,14 @@ const BranchManagment = lazy(() => import("./Pages/Admin/BranchManagment/index")
 const FloorManagment = lazy(() => import("./Pages/Admin/FloorManagment/index"));
 const GuestCRM = lazy(() => import("./Pages/Admin/Guest CRM/index"));
 const Payment = lazy(() => import("./Pages/Admin/Payment/index"));
+const MenuManagement = lazy(() => import("./Pages/Admin/MenuManagement/index"));
 const Reservation = lazy(() => import("./Pages/Admin/Reservation/index"));
-// const Orders = lazy(() => import("./Pages/Admin/Orders/index"));
+const Orders = lazy(() => import("./Pages/Admin/Orders/index"));
 const Settings = lazy(() => import("./Pages/Admin/Settings/index"));
+const RestaurantSettings = lazy(() => import("./Pages/Admin/RestaurantSettings/index"));
+const BusinessHours = lazy(() => import("./Pages/Admin/Settings/BusinessHours"));
+const ReservationPolicy = lazy(() => import("./Pages/Admin/Settings/ReservationPolicy"));
+const TurnTimes = lazy(() => import("./Pages/Admin/Settings/TurnTimes"));
 const Onboarding = lazy(() => import("./Pages/Admin/Onboarding/index"));
 const StaffManagment = lazy(() => import("./Pages/Admin/StaffManagment/index"));
 const StaffProfile = lazy(() => import("./Pages/Admin/StaffProfile/index"));
@@ -77,13 +81,17 @@ export const Router = createBrowserRouter([
             path: "reservation",
             element: <Reservation />,
           },
-          // {
-          //   path: "orders",
-          //   element: <Orders />,
-          // },
+          {
+            path: "orders",
+            element: <Orders />,
+          },
           {
             path: "payment",
             element: <Payment />,
+          },
+          {
+            path: "menu",
+            element: <MenuManagement />,
           },
           {
             path: "guest-crm",
@@ -96,6 +104,22 @@ export const Router = createBrowserRouter([
           {
             path: "settings",
             element: <Settings />,
+          },
+          {
+            path: "restaurant-settings",
+            element: <RestaurantSettings />,
+          },
+          {
+            path: "business-hours",
+            element: <BusinessHours />,
+          },
+          {
+            path: "reservation-policy",
+            element: <ReservationPolicy />,
+          },
+          {
+            path: "turn-times",
+            element: <TurnTimes />,
           },
           {
             path: "onboarding",
