@@ -18,7 +18,7 @@ type BranchContextType = {
 };
 
 const BranchContext = createContext<BranchContextType | undefined>(undefined);
-
+//eslint-disable-next-line
 export const useBranchContext = () => {
   const context = useContext(BranchContext);
   if (!context) {
@@ -29,14 +29,27 @@ export const useBranchContext = () => {
 
 export const BranchProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [branches, setBranches] = useState<BackendBranch[]>([]);
-  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
+  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("selectedBranchId");
+    }
+    return null;
+  });
   const [isLoadingBranches, setIsLoadingBranches] = useState(true);
+
+  useEffect(() => {
+    if (selectedBranchId) {
+      localStorage.setItem("selectedBranchId", selectedBranchId);
+    } else {
+      localStorage.removeItem("selectedBranchId");
+    }
+  }, [selectedBranchId]);
 
   const fetchBranches = async () => {
     setIsLoadingBranches(true);
     try {
       const response = await getJson<{ data: BackendBranch[] }>("/branches?limit=50");
-      const data = response.data as any;
+      const data = response.data 
       setBranches(data?.data ?? data ?? []);
     } catch (err) {
       console.error("Failed to fetch branches for context", err);

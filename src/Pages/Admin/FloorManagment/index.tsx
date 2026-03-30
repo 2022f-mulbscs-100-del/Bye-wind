@@ -6,6 +6,29 @@ import { useBranchContext } from "@/context/BranchContext";
 // ── types ────────────────────────────────────────────────────────────────────
 type Zone = "Indoor" | "Outdoor" | "Bar" | "Private Dining";
 type Shape = "Round" | "Square" | "Rectangle";
+
+const mapShape = (s: string): Shape => {
+  const up = s?.toUpperCase() || "";
+  if (up === "ROUND") return "Round";
+  if (up === "SQUARE") return "Square";
+  if (up === "RECTANGLE") return "Rectangle";
+  return "Round"; // fallback
+};
+
+const mapAreaTypeToBackend = (t: AreaType): string => {
+  return t.toUpperCase().replace(/\s+/g, "_");
+};
+
+const mapBackendToAreaType = (s: string): AreaType => {
+  const up = s?.toUpperCase() || "";
+  if (up === "RESTAURANT_AREA") return "Restaurant Area";
+  if (up === "HOTEL_AREA")      return "Hotel Area";
+  if (up === "LOUNGE_AREA")     return "Lounge Area";
+  if (up === "SERVICE_AREA")    return "Service Area";
+  if (up === "ENTRANCE_ZONE")   return "Entrance Zone";
+  return "Restaurant Area";
+};
+
 type AreaType = "Restaurant Area" | "Hotel Area" | "Lounge Area" | "Service Area" | "Entrance Zone";
 
 interface Table {
@@ -75,17 +98,17 @@ const areaTypes: AreaType[] = ["Restaurant Area", "Hotel Area", "Lounge Area", "
 const CANVAS_WIDTH = 1600;
 const CANVAS_HEIGHT = 560;
 
+const shapeRadius: Record<Shape, string> = {
+  Round:     "100%",
+  Square:    "12px",
+  Rectangle: "16px",
+};
+
 const zoneBadge: Record<Zone, { bg: string; text: string; dot: string }> = {
   Indoor:          { bg: "#ecfdf5", text: "#059669", dot: "#10b981" },
   Outdoor:         { bg: "#eff6ff", text: "#2563eb", dot: "#3b82f6" },
   Bar:             { bg: "#fffbeb", text: "#d97706", dot: "#f59e0b" },
   "Private Dining":{ bg: "#f5f3ff", text: "#7c3aed", dot: "#8b5cf6" },
-};
-
-const shapeClass: Record<Shape, string> = {
-  Round:     "rounded-full",
-  Square:    "rounded-xl",
-  Rectangle: "rounded-2xl",
 };
 
 const areaTone: Record<AreaType, { border: string; bg: string; text: string }> = {
@@ -97,10 +120,10 @@ const areaTone: Record<AreaType, { border: string; bg: string; text: string }> =
 };
 
 const initialTables: Table[] = [
-  { id: "t1", name: "Table 01", x: 80,  y: 60,  width: 90,  height: 90,  rotation: 0,  seats: 4, spacing: 12, zone: "Indoor",  shape: "Round" },
-  { id: "t2", name: "Table 02", x: 220, y: 70,  width: 120, height: 80,  rotation: 10, seats: 6, spacing: 14, zone: "Indoor",  shape: "Rectangle" },
-  { id: "t3", name: "Bar 1",    x: 420, y: 80,  width: 140, height: 60,  rotation: -5, seats: 5, spacing: 10, zone: "Bar",     shape: "Rectangle" },
-  { id: "t4", name: "Patio",    x: 140, y: 210, width: 110, height: 110, rotation: 0,  seats: 4, spacing: 16, zone: "Outdoor", shape: "Square" },
+  { id: "temp-1", name: "Table 01", x: 80,  y: 60,  width: 90,  height: 90,  rotation: 0,  seats: 4, spacing: 12, zone: "Indoor",  shape: "Round" },
+  { id: "temp-2", name: "Table 02", x: 220, y: 70,  width: 120, height: 80,  rotation: 10, seats: 6, spacing: 14, zone: "Indoor",  shape: "Rectangle" },
+  { id: "temp-3", name: "Bar 1",    x: 420, y: 80,  width: 140, height: 60,  rotation: 355, seats: 5, spacing: 10, zone: "Bar",     shape: "Rectangle" },
+  { id: "temp-4", name: "Patio",    x: 140, y: 210, width: 110, height: 110, rotation: 0,  seats: 4, spacing: 16, zone: "Outdoor", shape: "Square" },
 ];
 
 const initialAreas: FloorArea[] = [
@@ -257,12 +280,28 @@ export default function FloorManagement() {
         const response = await getJson<any[]>(`/floor-plans?branchId=${selectedBranchId}`);
         if (cancelled) return;
 
-        const rawFloors = response.data;
+        let rawFloors = response.data;
+        
+        // AUTO-PROVISION: If no floors exist, create a default "Main Floor" on the backend
         if (!rawFloors || rawFloors.length === 0) {
-          setFloors(DEFAULT_FLOORS);
-          setFloorLayouts({ f1: createDefaultLayout() });
-          setActiveFloorId("f1");
-          return;
+          try {
+            const createResponse = await postJson<any>("/floor-plans", {
+              branchId: selectedBranchId,
+              name: "Main Floor",
+              description: "Default layout",
+              canvasWidth: 800,
+              canvasHeight: 600,
+              isActive: true,
+            });
+            rawFloors = [createResponse.data];
+          } catch (createErr) {
+            console.error("Failed to auto-create floor plan", createErr);
+            // Fallback to local-only if backend creation fails (not ideal)
+            setFloors(DEFAULT_FLOORS);
+            setFloorLayouts({ f1: createDefaultLayout() });
+            setActiveFloorId("f1");
+            return;
+          }
         }
 
         const nextFloors: FloorMeta[] = rawFloors.map((fp: any) => ({
@@ -273,7 +312,7 @@ export default function FloorManagement() {
         const nextLayouts: Record<string, FloorLayout> = {};
         rawFloors.forEach((fp: any) => {
           nextLayouts[fp.id] = {
-            tables: fp.tables.map((t: any) => ({
+            tables: (fp.tables || []).map((t: any) => ({
               id: t.id,
               name: t.name || t.tableNumber,
               x: t.positionX ?? 0,
@@ -282,23 +321,23 @@ export default function FloorManagement() {
               height: t.height ?? 90,
               rotation: t.rotation ?? 0,
               seats: t.capacity ?? 4,
-              spacing: 12,
+              spacing: t.spacing ?? 12,
               zone: t.zone?.name ?? "Indoor",
-              shape: t.shape ?? "Round",
+              shape: mapShape(t.shape),
             })),
-            areas: fp.zones.map((z: any) => ({
+            areas: (fp.zones || []).map((z: any) => ({
               id: z.id,
               label: z.name,
-              type: "Restaurant Area",
+              type: mapBackendToAreaType(z.type),
               x: z.positionX ?? 0,
               y: z.positionY ?? 0,
               width: z.width ?? 320,
               height: z.height ?? 180,
-              zIndex: 1,
-              cornerRadius: 24,
+              zIndex: z.zIndex ?? 1,
+              cornerRadius: z.cornerRadius ?? 24,
             })),
-            selectedTableId: fp.tables[0]?.id ?? "",
-            selectedAreaId: fp.zones[0]?.id ?? "",
+            selectedTableId: fp.tables?.[0]?.id ?? "",
+            selectedAreaId: fp.zones?.[0]?.id ?? "",
           };
         });
 
@@ -369,65 +408,60 @@ export default function FloorManagement() {
     return { ...a, width: w, height: h, cornerRadius: clampNumber(a.cornerRadius, 0, maxCr), x: clampNumber(a.x, 0, cw - w), y: clampNumber(a.y, 0, ch - h) };
   }, []);
 
+  const [deletedTableIds, setDeletedTableIds] = useState<string[]>([]);
+  const [deletedAreaIds, setDeletedAreaIds] = useState<string[]>([]);
+
   const updateTable = useCallback((id: string, patch: Partial<Table>) =>
     setTables(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t))
   , [setTables]);
 
-  const addTable = async () => {
-    if (!selectedBranchId || !activeFloorId) return;
-    const toastId = toast.loading("Adding table...");
-    try {
-      const response = await postJson<any>("/floor-plans/tables", {
-        floorPlanId: activeFloorId,
-        tableNumber: `T${String(tables.length + 1).padStart(2, "0")}`,
-        name: `Table ${String(tables.length + 1).padStart(2, "0")}`,
-        positionX: 60,
-        positionY: 60,
-        width: 90,
-        height: 90,
-        rotation: 0,
-        capacity: 4,
-        shape: "Round",
-      });
-      const t = response.data;
-      const normalized: Table = {
-        id: t.id, name: t.name || t.tableNumber, x: t.positionX ?? 60, y: t.positionY ?? 60,
-        width: t.width ?? 90, height: t.height ?? 90, rotation: t.rotation ?? 0, seats: t.capacity ?? 4,
-        spacing: 12, zone: t.zone?.name ?? "Indoor", shape: t.shape ?? "Round"
-      };
-      setTables(prev => [normalized, ...prev]);
-      setSelectedTableId(normalized.id);
-      setSidebarTab("tables");
-      toast.success("Table added.", { id: toastId });
-    } catch (error: any) {
-      console.error("Failed to add table", error);
-      toast.error(error.message || "Failed to add table.", { id: toastId });
-    }
+  const addTable = () => {
+    const newId = `temp-t-${Date.now()}`;
+    const normalized: Table = {
+      id: newId, 
+      name: `Table ${String(tables.length + 1).padStart(2, "0")}`, 
+      x: 60, y: 60,
+      width: 90, height: 90, rotation: 0, seats: 4,
+      spacing: 12, zone: "Indoor", shape: "Round"
+    };
+    setTables(prev => [normalized, ...prev]);
+    setSelectedTableId(normalized.id);
+    setSidebarTab("tables");
+    toast.info("Table added locally. Save layout to persist.");
   };
 
-  const addArea = async () => {
-    if (!selectedBranchId || !activeFloorId) return;
-    const toastId = toast.loading("Adding zone...");
-    try {
-      const response = await postJson<any>("/floor-plans/zones", {
-        floorPlanId: activeFloorId,
-        name: areaDraft.label.trim() || areaDraft.type,
-      });
-      const z = response.data;
-      const a: FloorArea = {
-        id: z.id, label: z.name, type: "Restaurant Area",
-        x: z.positionX ?? 24, y: z.positionY ?? 24,
-        width: z.width ?? 320, height: z.height ?? 180,
-        zIndex: 1, cornerRadius: 24,
-      };
-      setAreas(prev => [...prev, clampArea(a)]);
-      setAreaDraft(p => ({ ...p, label: "" }));
-      setSelectedAreaId(a.id);
-      toast.success("Zone added.", { id: toastId });
-    } catch (error: any) {
-      console.error("Failed to add zone", error);
-      toast.error(error.message || "Failed to add zone.", { id: toastId });
+  const addArea = () => {
+    const newId = `temp-a-${Date.now()}`;
+    const a: FloorArea = {
+      id: newId, 
+      label: areaDraft.label.trim() || areaDraft.type, 
+      type: "Restaurant Area",
+      x: 24, y: 24,
+      width: 320, height: 180,
+      zIndex: 1, cornerRadius: 24,
+    };
+    setAreas(prev => [...prev, clampArea(a)]);
+    setAreaDraft(p => ({ ...p, label: "" }));
+    setSelectedAreaId(a.id);
+    toast.info("Zone added locally. Save layout to persist.");
+  };
+
+  const deleteTableLocal = (id: string) => {
+    const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (isUuid(id)) {
+      setDeletedTableIds(prev => [...prev, id]);
     }
+    setTables(prev => prev.filter(t => t.id !== id));
+    toast.info("Table removed locally.");
+  };
+
+  const deleteAreaLocal = (id: string) => {
+    const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (isUuid(id)) {
+      setDeletedAreaIds(prev => [...prev, id]);
+    }
+    setAreas(prev => prev.filter(a => a.id !== id));
+    toast.info("Zone removed locally.");
   };
 
   const addFloor = async () => {
@@ -493,24 +527,127 @@ export default function FloorManagement() {
   };
 
   const handleSaveLayout = async () => {
-    if (!activeFloorId) return;
+    if (!activeFloorId || activeFloorId === "f1") {
+      toast.error("Please wait for floor plan initialization or create one.");
+      return;
+    }
     const toastId = toast.loading("Saving layout...");
     try {
-      // Bulk update table positions
-      await putJson("/floor-plans/tables/bulk/positions", {
-        tables: tables.map(t => ({
-          id: t.id,
-          name: t.name,
-          positionX: Math.round(t.x),
-          positionY: Math.round(t.y),
-          width: t.width,
-          height: t.height,
-          rotation: t.rotation,
-          capacity: t.seats,
-          shape: t.shape,
-        }))
-      });
-      // In a real app we might also bulk update zones if they moved
+      const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      
+      const newTables = tables.filter(t => !isUuid(t.id));
+      const existingTables = tables.filter(t => isUuid(t.id));
+
+      const newAreas = areas.filter(a => !isUuid(a.id));
+      const existingAreas = areas.filter(a => isUuid(a.id));
+
+      // 1. Delete removed items
+      for (const id of deletedTableIds) {
+        await deleteJson(`/floor-plans/tables/${id}`);
+      }
+      for (const id of deletedAreaIds) {
+        await deleteJson(`/floor-plans/zones/${id}`);
+      }
+
+      // 2. Areas (Zones)
+      for (const na of newAreas) {
+        await postJson("/floor-plans/zones", {
+          floorPlanId: activeFloorId,
+          name: na.label,
+          type: mapAreaTypeToBackend(na.type),
+          positionX: Math.round(na.x),
+          positionY: Math.round(na.y),
+          width: na.width,
+          height: na.height,
+          zIndex: na.zIndex,
+          cornerRadius: na.cornerRadius,
+        });
+      }
+      for (const ea of existingAreas) {
+        await putJson(`/floor-plans/zones/${ea.id}`, {
+          name: ea.label,
+          type: mapAreaTypeToBackend(ea.type),
+          positionX: Math.round(ea.x),
+          positionY: Math.round(ea.y),
+          width: ea.width,
+          height: ea.height,
+          zIndex: ea.zIndex,
+          cornerRadius: ea.cornerRadius,
+        });
+      }
+
+      // 3. Tables sequentially (Creation)
+      for (const nt of newTables) {
+        await postJson("/floor-plans/tables", {
+          floorPlanId: activeFloorId,
+          tableNumber: nt.name,
+          name: nt.name,
+          positionX: Math.round(nt.x),
+          positionY: Math.round(nt.y),
+          width: nt.width,
+          height: nt.height,
+          rotation: Math.round(((nt.rotation % 360) + 360) % 360),
+          capacity: nt.seats,
+          spacing: nt.spacing,
+          shape: nt.shape.toUpperCase(),
+          label: nt.name,
+        });
+      }
+
+      // 4. Bulk update existing table positions
+      if (existingTables.length > 0) {
+        await putJson("/floor-plans/tables/bulk/positions", {
+          tables: existingTables.map(t => ({
+            id: t.id,
+            name: t.name,
+            positionX: Math.round(t.x),
+            positionY: Math.round(t.y),
+            width: t.width,
+            height: t.height,
+            rotation: Math.round(((t.rotation % 360) + 360) % 360),
+            capacity: t.seats,
+            spacing: t.spacing,
+            shape: t.shape.toUpperCase(),
+            label: t.name,
+          }))
+        });
+      }
+
+      // 5. Refresh layout to get new UUIDs and avoid "temp-" IDs
+      const response = await getJson<any[]>(`/floor-plans?branchId=${selectedBranchId}`);
+      const rawFloors = response.data;
+      const currentFp = rawFloors.find((fp: any) => fp.id === activeFloorId);
+      if (currentFp) {
+        patchLayout({
+          tables: (currentFp.tables || []).map((t: any) => ({
+            id: t.id,
+            name: t.name || t.tableNumber,
+            x: t.positionX ?? 0,
+            y: t.positionY ?? 0,
+            width: t.width ?? 90,
+            height: t.height ?? 90,
+            rotation: t.rotation ?? 0,
+            seats: t.capacity ?? 4,
+            spacing: t.spacing ?? 12,
+            zone: t.zone?.name ?? "Indoor",
+            shape: mapShape(t.shape),
+          })),
+          areas: (currentFp.zones || []).map((z: any) => ({
+            id: z.id,
+            label: z.name,
+            type: mapBackendToAreaType(z.type),
+            x: z.positionX ?? 0,
+            y: z.positionY ?? 0,
+            width: z.width ?? 320,
+            height: z.height ?? 180,
+            zIndex: z.zIndex ?? 1,
+            cornerRadius: z.cornerRadius ?? 24,
+          })),
+        });
+      }
+
+      setDeletedTableIds([]);
+      setDeletedAreaIds([]);
       toast.success("Layout saved successfully!", { id: toastId });
     } catch (error: any) {
       console.error("Failed to save layout", error);
@@ -609,9 +746,9 @@ export default function FloorManagement() {
       <div>
         <Label>Rotation: {t.rotation}°</Label>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <button onClick={() => updateTable(t.id, { rotation: clampNumber(t.rotation - 5, -180, 180) })} style={{ width: 28, height: 28, borderRadius: "50%", border: "1.5px solid #e2e8f0", background: "#fff", cursor: "pointer", fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>-</button>
-          <input type="range" min={-180} max={180} value={t.rotation} onChange={e => updateTable(t.id, { rotation: +e.target.value })} style={{ flex: 1, accentColor: "#0f172a" }} />
-          <button onClick={() => updateTable(t.id, { rotation: clampNumber(t.rotation + 5, -180, 180) })} style={{ width: 28, height: 28, borderRadius: "50%", border: "1.5px solid #e2e8f0", background: "#fff", cursor: "pointer", fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+          <button onClick={() => updateTable(t.id, { rotation: ((t.rotation - 5) + 360) % 360 })} style={{ width: 28, height: 28, borderRadius: "50%", border: "1.5px solid #e2e8f0", background: "#fff", cursor: "pointer", fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>-</button>
+          <input type="range" min={0} max={359} value={t.rotation} onChange={e => updateTable(t.id, { rotation: +e.target.value })} style={{ flex: 1, accentColor: "#0f172a" }} />
+          <button onClick={() => updateTable(t.id, { rotation: (t.rotation + 5) % 360 })} style={{ width: 28, height: 28, borderRadius: "50%", border: "1.5px solid #e2e8f0", background: "#fff", cursor: "pointer", fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
         </div>
       </div>
     </div>
@@ -839,18 +976,7 @@ export default function FloorManagement() {
                           {selectedTable.zone}
                         </span>
                         <button
-                          onClick={async () => {
-                            if (!selectedTable.id) return;
-                            const tBatch = toast.loading("Deleting table...");
-                            try {
-                              await deleteJson(`/floor-plans/tables/${selectedTable.id}`);
-                              setTables(prev => prev.filter(t => t.id !== selectedTable.id));
-                              toast.success("Table deleted.", { id: tBatch });
-                            } catch (e: any) {
-                              console.error(e);
-                              toast.error(e.message || "Failed to delete table.", { id: tBatch });
-                            }
-                          }}
+                          onClick={() => deleteTableLocal(selectedTable.id)}
                           style={{ width: 26, height: 26, borderRadius: "50%", border: "1.5px solid #fecdd3", background: "#fff1f2", cursor: "pointer", color: "#be123c", display: "flex", alignItems: "center", justifyContent: "center" }}
                           title="Delete table"
                         >
@@ -909,18 +1035,7 @@ export default function FloorManagement() {
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                       <SectionTitle>Edit area</SectionTitle>
                       <button
-                        onClick={async () => {
-                          if (!selectedArea.id) return;
-                          const zBatch = toast.loading("Deleting zone...");
-                          try {
-                            await deleteJson(`/floor-plans/zones/${selectedArea.id}`);
-                            setAreas(prev => prev.filter(a => a.id !== selectedArea.id));
-                            toast.success("Zone deleted.", { id: zBatch });
-                          } catch (e: any) {
-                            console.error(e);
-                            toast.error(e.message || "Failed to delete zone.", { id: zBatch });
-                          }
-                        }}
+                        onClick={() => deleteAreaLocal(selectedArea.id)}
                         style={{ width: 26, height: 26, borderRadius: "50%", border: "1.5px solid #fecdd3", background: "#fff1f2", cursor: "pointer", color: "#be123c", display: "flex", alignItems: "center", justifyContent: "center" }}
                         title="Delete area"
                       >
@@ -1015,10 +1130,10 @@ export default function FloorManagement() {
                   <button
                     key={table.id}
                     onPointerDown={e => startDrag(e, "table", table.id)}
-                    className={shapeClass[table.shape]}
                     style={{
                       position: "absolute", left: table.x, top: table.y,
                       width: table.width, height: table.height,
+                      borderRadius: shapeRadius[table.shape],
                       transform: `rotate(${table.rotation}deg)`,
                       zIndex: sel ? 120 : 100,
                       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",

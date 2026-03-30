@@ -11,6 +11,7 @@ import {
 import Loader from "@/Components/loader";
 import { getJson, postJson, putJson, type ApiErrorDetail } from "@/lib/api";
 import { getStoredRestaurantId } from "@/lib/auth";
+import { useBranchContext } from "@/context/BranchContext";
 
 type BranchAddress = {
   street?: string;
@@ -108,7 +109,8 @@ const PILL_LABELS: Record<PillState, string> = {
   live: "Live",
 };
 
-const GO_LIVE_CHECKPOINTS: { key: keyof Omit<GoLiveChecklist, "restaurantId" | "completionPercentage" | "isLive" | "wentLiveAt" | "lastCheckedAt" | "branchStatuses">; label: string }[] = [
+// Restaurant-level go-live checkpoints (shown when "All Branches" selected)
+const RESTAURANT_GO_LIVE_CHECKPOINTS: { key: keyof Omit<GoLiveChecklist, "restaurantId" | "completionPercentage" | "isLive" | "wentLiveAt" | "lastCheckedAt" | "branchStatuses">; label: string }[] = [
   { key: "restaurantProfileDone", label: "Restaurant profile configured" },
   { key: "branchSetupDone", label: "Branch setup completed" },
   { key: "businessHoursDone", label: "Business hours configured" },
@@ -120,6 +122,15 @@ const GO_LIVE_CHECKPOINTS: { key: keyof Omit<GoLiveChecklist, "restaurantId" | "
   { key: "paymentConfiguredDone", label: "Payment gateway configured" },
   { key: "communicationDone", label: "Communication channels ready" },
   { key: "brandingDone", label: "Branding refreshed" },
+];
+
+// Branch-level go-live checkpoints (shown when specific branch selected)
+const BRANCH_GO_LIVE_CHECKPOINTS: Array<{ key: keyof BranchGoLiveStatus; label: string }> = [
+  { key: "businessHoursDone", label: "Business hours configured" },
+  { key: "floorPlanDone", label: "Floor plan designed" },
+  { key: "tablesConfiguredDone", label: "Tables configured" },
+  { key: "reservationPolicyDone", label: "Reservation policy set" },
+  { key: "turnTimesDone", label: "Turn times tuned" },
 ];
 
 const createEmptyForm = (): BranchFormState => ({
@@ -185,10 +196,11 @@ const BranchManagment = () => {
   const [goLiveLoading, setGoLiveLoading] = useState(true);
   const [goLiveActivationErrors, setGoLiveActivationErrors] = useState<ActivationError[]>([]);
   const [activatingGoLive, setActivatingGoLive] = useState(false);
+  const { refreshBranches } = useBranchContext();
   const restaurantId = getStoredRestaurantId();
 
   const loadBranches = async (
-      pill: Exclude<PillState, "create"> = activePill === "live" ? "live" : "pending",
+    pill: Exclude<PillState, "create"> = activePill === "live" ? "live" : "pending",
     preferredBranchId?: string
   ) => {
     setLoadingBranches(true);
@@ -276,11 +288,25 @@ const BranchManagment = () => {
   };
 
   const checklistItems = useMemo(() => {
-    return GO_LIVE_CHECKPOINTS.map((checkpoint) => ({
+    // When a specific branch is selected, show branch-level items
+    if (selectedBranchId && goLiveChecklist?.branchStatuses) {
+      const branchStatus = goLiveChecklist.branchStatuses.find(
+        (status) => status.branchId === selectedBranchId
+      );
+      if (branchStatus) {
+        return BRANCH_GO_LIVE_CHECKPOINTS.map((checkpoint) => ({
+          label: checkpoint.label,
+          ready: Boolean(branchStatus[checkpoint.key]),
+        }));
+      }
+    }
+
+    // Otherwise show restaurant-level items
+    return RESTAURANT_GO_LIVE_CHECKPOINTS.map((checkpoint) => ({
       label: checkpoint.label,
       ready: Boolean(goLiveChecklist?.[checkpoint.key]),
     }));
-  }, [goLiveChecklist]);
+  }, [goLiveChecklist, selectedBranchId]);
 
   useEffect(() => {
     void loadBranches("pending");
@@ -401,6 +427,7 @@ const BranchManagment = () => {
       toast.error(err.message || "Unable to save branch. Please try again.", { id: toastId });
     } finally {
       await loadGoLiveChecklist();
+      await refreshBranches();
       setSaving(false);
     }
   };
@@ -425,6 +452,7 @@ const BranchManagment = () => {
       toast.error(err.message || "Unable to update branch status.", { id: toastId });
     } finally {
       await loadGoLiveChecklist();
+      await refreshBranches();
       setSaving(false);
     }
   };
@@ -478,12 +506,45 @@ const BranchManagment = () => {
     setSelectedBranchId(filteredBranches[0].id);
   }, [filteredBranches, isCreating, selectedBranchId, activePill]);
 
-  const completionRatio = Math.round(goLiveChecklist?.completionPercentage ?? 0);
-  const branchReady = Boolean(selectedBranch?.goLiveStatus?.isReady);
-  const goLiveChecklistReady = goLiveChecklist?.completionPercentage === 100;
+  const completionRatio = useMemo(() => {
+    // When a specific branch is selected, show branch completion
+    if (selectedBranchId && goLiveChecklist?.branchStatuses) {
+      const branchStatus = goLiveChecklist.branchStatuses.find(
+        (status) => status.branchId === selectedBranchId
+      );
+      return branchStatus
+        ? Math.round(branchStatus.completionPercentage)
+        : 0;
+    }
+    // Otherwise show restaurant completion
+    return Math.round(goLiveChecklist?.completionPercentage ?? 0);
+  }, [goLiveChecklist, selectedBranchId]);
+
+  const branchReadyStatus = useMemo(() => {
+    // Get the branch's go-live readiness from branchStatuses
+    if (selectedBranchId && goLiveChecklist?.branchStatuses) {
+      return goLiveChecklist.branchStatuses.find(
+        (status) => status.branchId === selectedBranchId
+      )?.isReady ?? false;
+    }
+    // Fall back to selectedBranch.goLiveStatus if available
+    return Boolean(selectedBranch?.goLiveStatus?.isReady);
+  }, [selectedBranchId, goLiveChecklist, selectedBranch]);
+
+  const goLiveChecklistReady = useMemo(() => {
+    // When a specific branch is selected, check branch completion
+    if (selectedBranchId && goLiveChecklist?.branchStatuses) {
+      const branchStatus = goLiveChecklist.branchStatuses.find(
+        (status) => status.branchId === selectedBranchId
+      );
+      return (branchStatus?.completionPercentage ?? 0) === 100;
+    }
+    // Otherwise check restaurant completion
+    return (goLiveChecklist?.completionPercentage ?? 0) === 100;
+  }, [selectedBranchId, goLiveChecklist]);
   const branchStatus = normalizeStatus(selectedBranch?.status);
   const canActivateGoLive = Boolean(
-    selectedBranch && branchStatus === "PENDING" && branchReady && goLiveChecklistReady
+    selectedBranch && branchStatus === "PENDING" && branchReadyStatus && goLiveChecklistReady
   );
 
   return (
@@ -530,11 +591,10 @@ const BranchManagment = () => {
               key={pill}
               type="button"
               onClick={handlePillClick}
-              className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
-                isSelected
-                  ? "bg-slate-900 text-white"
-                  : "bg-white text-slate-600 border border-slate-200"
-              }`}
+              className={`rounded-full px-4 py-2 text-xs font-semibold transition ${isSelected
+                ? "bg-slate-900 text-white"
+                : "bg-white text-slate-600 border border-slate-200"
+                }`}
             >
               {PILL_LABELS[pill]}
             </button>
@@ -557,11 +617,10 @@ const BranchManagment = () => {
                     key={branch.id}
                     type="button"
                     onClick={() => handleSelectBranch(branch.id)}
-                    className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
-                      branch.id === selectedBranchId && !isCreating
-                        ? "border-slate-900 bg-white shadow-sm"
-                        : "border-slate-200 bg-white hover:border-slate-300"
-                    }`}
+                    className={`w-full rounded-2xl border px-4 py-3 text-left transition ${branch.id === selectedBranchId && !isCreating
+                      ? "border-slate-900 bg-white shadow-sm"
+                      : "border-slate-200 bg-white hover:border-slate-300"
+                      }`}
                   >
                     <div className="flex items-center justify-between">
                       <div>
@@ -569,9 +628,8 @@ const BranchManagment = () => {
                         <div className="text-xs text-slate-500">{formatAddress(branch.address)}</div>
                       </div>
                       <span
-                        className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase ${
-                          badgeStyles[status] ?? "bg-slate-100 text-slate-600"
-                        }`}
+                        className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase ${badgeStyles[status] ?? "bg-slate-100 text-slate-600"
+                          }`}
                       >
                         {status}
                       </span>
@@ -595,179 +653,176 @@ const BranchManagment = () => {
         </div>
 
         {activePill !== "create" && filteredBranches.length === 0 ? (
-           <div className="rounded-2xl border border-slate-200 border-dashed bg-white p-12 text-center shadow-sm flex flex-col items-center justify-center">
-             <div className="rounded-full bg-slate-50 p-4 mb-4">
-                <FiMapPin className="text-3xl text-slate-400" />
-             </div>
-             <h3 className="text-lg font-semibold text-slate-900 mb-2">No branches found</h3>
-             <p className="text-sm text-slate-500 max-w-sm mx-auto mb-6">
-               There are no {activePill} branches for this restaurant. Create a new branch to get started.
-             </p>
-             <button
-               type="button"
-               onClick={handleStartCreate}
-               className="flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
-             >
-               <FiPlus /> Create Branch
-             </button>
-           </div>
-        ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-col">
-              <div className="text-xs font-semibold uppercase text-slate-400">
-                {isCreating ? "New branch" : "Branch Profile"}
-              </div>
-              <div className="text-xl font-semibold text-slate-900">
-                {isCreating ? "Create a new branch" : selectedBranch?.name ?? "Select a branch"}
-              </div>
+          <div className="rounded-2xl border border-slate-200 border-dashed bg-white p-12 text-center shadow-sm flex flex-col items-center justify-center">
+            <div className="rounded-full bg-slate-50 p-4 mb-4">
+              <FiMapPin className="text-3xl text-slate-400" />
             </div>
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                badgeStyles[getStatusLabel(selectedBranch)] ?? "bg-slate-100 text-slate-600"
-              }`}
-            >
-              {isCreating ? "Draft" : getStatusLabel(selectedBranch)}
-            </span>
-          </div>
-
-          {loadingDetail && !isCreating ? (
-            <div className="mt-5 flex items-center justify-center">
-              <Loader size={28} color="#0f172a" />
-            </div>
-          ) : (
-          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-            {[
-              { label: "Branch name", value: branchForm.name, field: "name" as const },
-              { label: "Timezone", value: branchForm.timezone, field: "timezone" as const },
-            ].map((item) => (
-              <label key={item.label} className="space-y-1 text-xs font-semibold text-slate-500">
-                {item.label}
-                <input
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
-                  value={item.value}
-                  onChange={(event) => handleFormField(item.field, event.target.value)}
-                />
-              </label>
-            ))}
-
-            {[
-              { label: "Street", field: "street" as const },
-              { label: "City", field: "city" as const },
-              { label: "State", field: "state" as const },
-              { label: "ZIP Code", field: "zipCode" as const },
-              { label: "Country", field: "country" as const },
-            ].map((item) => (
-              <label key={item.label} className="space-y-1 text-xs font-semibold text-slate-500">
-                {item.label}
-                <input
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
-                  value={branchForm.address[item.field]}
-                  onChange={(event) => handleAddressField(item.field, event.target.value)}
-                />
-              </label>
-            ))}
-
-            {[
-              { label: "Phone", field: "phone" as const },
-              { label: "Email", field: "email" as const },
-            ].map((item) => (
-              <label key={item.label} className="space-y-1 text-xs font-semibold text-slate-500">
-                {item.label}
-                <input
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
-                  value={branchForm[item.field]}
-                  onChange={(event) => handleFormField(item.field, event.target.value)}
-                />
-              </label>
-            ))}
-          </div>
-          )}
-
-          <div className="mt-6 flex flex-wrap gap-2">
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">No branches found</h3>
+            <p className="text-sm text-slate-500 max-w-sm mx-auto mb-6">
+              There are no {activePill} branches for this restaurant. Create a new branch to get started.
+            </p>
             <button
               type="button"
-              onClick={handleSave}
-              disabled={!canSave || saving}
-              className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold text-white shadow-sm ${
-                canSave
-                  ? "bg-slate-900 hover:bg-slate-800"
-                  : "bg-slate-200 text-slate-500 cursor-not-allowed"
-              }`}
+              onClick={handleStartCreate}
+              className="flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
             >
-              <FiEdit3 />
-              {isCreating ? "Create branch" : "Save changes"}
+              <FiPlus /> Create Branch
             </button>
-            {!isCreating && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => handleToggleActive(false)}
-                  disabled={saving}
-                  className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                >
-                  <FiXCircle /> Move to Draft
-                </button>
-                <button
-                  type="button"
-                  onClick={handleGoLive}
-                  disabled={!canActivateGoLive || activatingGoLive}
-                  className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold ${
-                    canActivateGoLive
-                      ? "bg-emerald-600 text-white hover:bg-emerald-500"
-                      : "bg-slate-200 text-slate-500 cursor-not-allowed"
-                  }`}
-                >
-                  <FiCheckCircle />
-                  {activatingGoLive ? "Going Live…" : "Go Live"}
-                </button>
-              </>
-            )}
           </div>
-
-          <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50 p-4">
-            <div className="flex items-center justify-between text-sm font-semibold text-slate-700">
-              <span>Go-Live Checklist & Validation</span>
-              <span className="text-xs text-slate-500">
-                {goLiveLoading ? "Loading…" : `${completionRatio}% complete`}
+        ) : (
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-col">
+                <div className="text-xs font-semibold uppercase text-slate-400">
+                  {isCreating ? "New branch" : "Branch Profile"}
+                </div>
+                <div className="text-xl font-semibold text-slate-900">
+                  {isCreating ? "Create a new branch" : selectedBranch?.name ?? "Select a branch"}
+                </div>
+              </div>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeStyles[getStatusLabel(selectedBranch)] ?? "bg-slate-100 text-slate-600"
+                  }`}
+              >
+                {isCreating ? "Draft" : getStatusLabel(selectedBranch)}
               </span>
             </div>
-            {goLiveLoading ? (
-              <div className="mt-3 flex items-center justify-center text-xs text-slate-500">
-                <Loader size={20} color="#0f172a" />
-                <span className="ml-2">Checking go-live readiness…</span>
+
+            {loadingDetail && !isCreating ? (
+              <div className="mt-5 flex items-center justify-center">
+                <Loader size={28} color="#0f172a" />
               </div>
             ) : (
-              <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-slate-600">
-                {checklistItems.map((item) => (
-                  <div key={item.label} className="flex items-center gap-2">
-                    {item.ready ? (
-                      <FiCheckCircle className="text-emerald-500" />
-                    ) : (
-                      <FiClock className="text-amber-500" />
-                    )}
+              <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+                {[
+                  { label: "Branch name", value: branchForm.name, field: "name" as const },
+                  { label: "Timezone", value: branchForm.timezone, field: "timezone" as const },
+                ].map((item) => (
+                  <label key={item.label} className="space-y-1 text-xs font-semibold text-slate-500">
                     {item.label}
-                  </div>
+                    <input
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                      value={item.value}
+                      onChange={(event) => handleFormField(item.field, event.target.value)}
+                    />
+                  </label>
+                ))}
+
+                {[
+                  { label: "Street", field: "street" as const },
+                  { label: "City", field: "city" as const },
+                  { label: "State", field: "state" as const },
+                  { label: "ZIP Code", field: "zipCode" as const },
+                  { label: "Country", field: "country" as const },
+                ].map((item) => (
+                  <label key={item.label} className="space-y-1 text-xs font-semibold text-slate-500">
+                    {item.label}
+                    <input
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                      value={branchForm.address[item.field]}
+                      onChange={(event) => handleAddressField(item.field, event.target.value)}
+                    />
+                  </label>
+                ))}
+
+                {[
+                  { label: "Phone", field: "phone" as const },
+                  { label: "Email", field: "email" as const },
+                ].map((item) => (
+                  <label key={item.label} className="space-y-1 text-xs font-semibold text-slate-500">
+                    {item.label}
+                    <input
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                      value={branchForm[item.field]}
+                      onChange={(event) => handleFormField(item.field, event.target.value)}
+                    />
+                  </label>
                 ))}
               </div>
             )}
-            {goLiveActivationErrors.length > 0 && (
-              <div className="mt-3 rounded-xl border border-rose-100 bg-rose-50 p-3 text-xs text-rose-600">
-                {goLiveActivationErrors.map((error) => (
-                  <div key={`${error.field}-${error.message}`} className="flex items-center gap-2">
-                    <FiXCircle className="text-rose-500" />
-                    <span>
-                      <span className="font-semibold">
-                        {error.field ?? "Checklist"}
+
+            <div className="mt-6 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!canSave || saving}
+                className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold text-white shadow-sm ${canSave
+                  ? "bg-slate-900 hover:bg-slate-800"
+                  : "bg-slate-200 text-slate-500 cursor-not-allowed"
+                  }`}
+              >
+                <FiEdit3 />
+                {isCreating ? "Create branch" : "Save changes"}
+              </button>
+              {!isCreating && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleActive(false)}
+                    disabled={saving}
+                    className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  >
+                    <FiXCircle /> Move to Draft
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleGoLive}
+                    disabled={!canActivateGoLive || activatingGoLive}
+                    className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold ${canActivateGoLive
+                      ? "bg-emerald-600 text-white hover:bg-emerald-500"
+                      : "bg-slate-200 text-slate-500 cursor-not-allowed"
+                      }`}
+                  >
+                    <FiCheckCircle />
+                    {activatingGoLive ? "Going Live…" : "Go Live"}
+                  </button>
+                </>
+              )}
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <div className="flex items-center justify-between text-sm font-semibold text-slate-700">
+                <span>Go-Live Checklist & Validation</span>
+                <span className="text-xs text-slate-500">
+                  {goLiveLoading ? "Loading…" : `${completionRatio}% complete`}
+                </span>
+              </div>
+              {goLiveLoading ? (
+                <div className="mt-3 flex items-center justify-center text-xs text-slate-500">
+                  <Loader size={20} color="#0f172a" />
+                  <span className="ml-2">Checking go-live readiness…</span>
+                </div>
+              ) : (
+                <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-slate-600">
+                  {checklistItems.map((item) => (
+                    <div key={item.label} className="flex items-center gap-2">
+                      {item.ready ? (
+                        <FiCheckCircle className="text-emerald-500" />
+                      ) : (
+                        <FiClock className="text-amber-500" />
+                      )}
+                      {item.label}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {goLiveActivationErrors.length > 0 && (
+                <div className="mt-3 rounded-xl border border-rose-100 bg-rose-50 p-3 text-xs text-rose-600">
+                  {goLiveActivationErrors.map((error) => (
+                    <div key={`${error.field}-${error.message}`} className="flex items-center gap-2">
+                      <FiXCircle className="text-rose-500" />
+                      <span>
+                        <span className="font-semibold">
+                          {error.field ?? "Checklist"}
+                        </span>
+                        {": "}{error.message}
                       </span>
-                      {": "}{error.message}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
         )}
       </div>
     </div>
