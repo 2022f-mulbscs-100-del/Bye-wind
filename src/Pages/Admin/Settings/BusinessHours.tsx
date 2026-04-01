@@ -1,15 +1,24 @@
 import { useState } from "react";
 import { useSettingsData } from "@/hooks/useSettingsData";
 import Loader from "@/Components/loader";
-import { FiSave, FiRotateCcw } from "react-icons/fi";
+import {
+  FiCalendar,
+  FiClock,
+  FiEdit2,
+  FiPlus,
+  FiRotateCcw,
+  FiSave,
+  FiTrash2,
+} from "react-icons/fi";
 
 export default function BusinessHours() {
-   const { 
+  const {
     settings, setSettings, isLoading, hasChanges, 
     saveSettings, resetSettings, selectedBranchId,
-    saveHoliday, deleteHoliday 
+    saveHoliday, updateHoliday, deleteHoliday
   } = useSettingsData();
-  const [holidayDraft, setHolidayDraft] = useState("");
+  const [holidayDraft, setHolidayDraft] = useState({ name: "", startDate: "" });
+  const [editingHolidayId, setEditingHolidayId] = useState<string | null>(null);
 
   if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader size={40} /></div>;
 
@@ -22,129 +31,262 @@ export default function BusinessHours() {
     );
   }
 
+  const resetHolidayForm = () => {
+    setHolidayDraft({ name: "", startDate: "" });
+    setEditingHolidayId(null);
+  };
+
+  const handleHolidaySubmit = async () => {
+    if (!holidayDraft.name.trim() || !holidayDraft.startDate) return;
+
+    if (editingHolidayId) {
+      await updateHoliday(editingHolidayId, {
+        name: holidayDraft.name.trim(),
+        startDate: holidayDraft.startDate,
+      });
+    } else {
+      await saveHoliday({
+        name: holidayDraft.name.trim(),
+        startDate: holidayDraft.startDate,
+      });
+    }
+
+    resetHolidayForm();
+  };
+
   return (
-    <div className="space-y-6 max-w-4xl animate-in fade-in duration-500">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-500 mb-1">Operations Control</div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Business Hours</h1>
+    <div className="max-w-6xl space-y-6 animate-in fade-in duration-500">
+      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="max-w-2xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <FiClock className="text-slate-500" />
+              Operations Control
+            </div>
+            <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-900">
+              Business Hours
+            </h1>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              Maintain your weekly opening schedule and manage branch blackout dates from one structured operations workspace.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <MetricCard
+              label="Open days"
+              value={String(settings.ops.businessHours.filter((row) => !row.closed).length)}
+            />
+            <MetricCard
+              label="Blackout dates"
+              value={String(settings.ops.holidays.length)}
+            />
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="mt-6 flex flex-wrap items-center gap-2">
           <button
             onClick={resetSettings}
             disabled={!hasChanges}
-            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50 disabled:opacity-30 transition-all"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-30"
           >
             <FiRotateCcw /> Reset Changes
           </button>
           <button
             onClick={() => saveSettings("ops")}
             disabled={!hasChanges}
-            className="flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-30 shadow-xl shadow-slate-200 transition-all"
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-30"
           >
             <FiSave /> Update Schedule
           </button>
         </div>
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        <div className="lg:col-span-3 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm space-y-6">
-          <h3 className="text-lg font-bold text-slate-900 mb-4">Weekly Schedule</h3>
-          <div className="space-y-3">
-            {settings.ops.businessHours.map((row) => (
-              <div key={row.day} className={`grid grid-cols-[80px_1fr_1fr_80px] items-center gap-4 rounded-2xl p-4 text-sm border transition-all ${
-                row.closed ? "bg-slate-50 border-slate-100 opacity-60" : "bg-white border-slate-200 shadow-sm"
-              }`}>
-                <span className="font-black text-slate-900">{row.day}</span>
-                <input
-                  type="time"
-                  value={row.open}
-                  disabled={row.closed}
-                  onChange={(e) => setSettings(prev => ({
-                    ...prev,
-                    ops: { ...prev.ops, businessHours: prev.ops.businessHours.map(d => d.day === row.day ? { ...d, open: e.target.value } : d) }
-                  }))}
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:outline-none focus:bg-white disabled:opacity-50"
-                />
-                <input
-                  type="time"
-                  value={row.close}
-                  disabled={row.closed}
-                  onChange={(e) => setSettings(prev => ({
-                    ...prev,
-                    ops: { ...prev.ops, businessHours: prev.ops.businessHours.map(d => d.day === row.day ? { ...d, close: e.target.value } : d) }
-                  }))}
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:outline-none focus:bg-white disabled:opacity-50"
-                />
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <div className="relative">
-                    <input
-                      type="checkbox"
-                      checked={row.closed}
-                      onChange={(e) => setSettings(prev => ({
-                        ...prev,
-                        ops: { ...prev.ops, businessHours: prev.ops.businessHours.map(d => d.day === row.day ? { ...d, closed: e.target.checked } : d) }
-                      }))}
-                      className="sr-only peer"
-                    />
-                    <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-rose-500 transition-colors"></div>
-                    <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
-                  </div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight group-hover:text-slate-600">Off</span>
-                </label>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.9fr)]">
+        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-6 py-5">
+            <h2 className="text-lg font-semibold text-slate-900">Weekly Schedule</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Set opening and closing hours for each day and mark closed days when needed.
+            </p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <div className="min-w-[680px]">
+              <div className="grid grid-cols-[96px_1fr_1fr_110px] border-b border-slate-200 bg-slate-50 px-6 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <div>Day</div>
+                <div>Open</div>
+                <div>Close</div>
+                <div>Status</div>
               </div>
+              <div className="divide-y divide-slate-200">
+            {settings.ops.businessHours.map((row) => (
+                  <div
+                    key={row.day}
+                    className={`grid grid-cols-[96px_1fr_1fr_110px] items-center gap-4 px-6 py-4 ${
+                      row.closed ? "bg-slate-50/70" : "bg-white"
+                    }`}
+                  >
+                    <div className="text-sm font-semibold text-slate-900">{row.day}</div>
+                    <div>
+                      <input
+                        type="time"
+                        value={row.open}
+                        disabled={row.closed}
+                        onChange={(e) => setSettings(prev => ({
+                          ...prev,
+                          ops: { ...prev.ops, businessHours: prev.ops.businessHours.map(d => d.day === row.day ? { ...d, open: e.target.value } : d) }
+                        }))}
+                        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-slate-300 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="time"
+                        value={row.close}
+                        disabled={row.closed}
+                        onChange={(e) => setSettings(prev => ({
+                          ...prev,
+                          ops: { ...prev.ops, businessHours: prev.ops.businessHours.map(d => d.day === row.day ? { ...d, close: e.target.value } : d) }
+                        }))}
+                        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-slate-300 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="inline-flex items-center gap-3 cursor-pointer">
+                        <div className="relative">
+                          <input
+                            type="checkbox"
+                            checked={row.closed}
+                            onChange={(e) => setSettings(prev => ({
+                              ...prev,
+                              ops: { ...prev.ops, businessHours: prev.ops.businessHours.map(d => d.day === row.day ? { ...d, closed: e.target.checked } : d) }
+                            }))}
+                            className="sr-only peer"
+                          />
+                          <div className="h-6 w-10 rounded-full bg-slate-200 transition-colors peer-checked:bg-rose-500"></div>
+                          <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-4"></div>
+                        </div>
+                        <span className={`text-xs font-semibold ${row.closed ? "text-rose-500" : "text-emerald-600"}`}>
+                          {row.closed ? "Off" : "On"}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
             ))}
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <div className="lg:col-span-2 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm space-y-6 h-fit">
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">Blackout Dates</h3>
-            <p className="text-xs text-slate-400 mt-1 font-medium">Add specific dates when this branch will be closed entirely.</p>
+        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm h-fit">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
+              <FiCalendar />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Blackout Dates</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Add and edit named blackout dates when this branch is fully closed.
+              </p>
+            </div>
           </div>
-          
-          <div className="flex gap-2">
+
+          <div className="mt-6 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <input
-              type="date"
-              value={holidayDraft}
-              onChange={(e) => setHolidayDraft(e.target.value)}
-              className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:outline-none focus:bg-white"
+              type="text"
+              value={holidayDraft.name}
+              onChange={(e) => setHolidayDraft((prev) => ({ ...prev, name: e.target.value }))}
+              placeholder="Blackout name"
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-slate-300 focus:outline-none"
             />
-            <button
-              onClick={() => {
-                if (!holidayDraft) return;
-                saveHoliday(holidayDraft);
-                setHolidayDraft("");
-              }}
-              className="rounded-xl bg-indigo-600 px-6 text-xs font-black text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all uppercase tracking-widest"
-            >
-              Add
-            </button>
+            <div className="flex gap-2">
+              <input
+                type="date"
+                value={holidayDraft.startDate}
+                onChange={(e) => setHolidayDraft((prev) => ({ ...prev, startDate: e.target.value }))}
+                className="h-11 flex-1 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-slate-300 focus:outline-none"
+              />
+              <button
+                onClick={handleHolidaySubmit}
+                disabled={!holidayDraft.name.trim() || !holidayDraft.startDate}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-40"
+              >
+                {editingHolidayId ? <FiSave /> : <FiPlus />}
+                {editingHolidayId ? "Save" : "Add"}
+              </button>
+            </div>
+            {editingHolidayId && (
+              <button
+                type="button"
+                onClick={resetHolidayForm}
+                className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+              >
+                Cancel edit
+              </button>
+            )}
           </div>
 
-          <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+          <div className="mt-5 space-y-2 max-h-[420px] overflow-y-auto pr-1">
             {settings.ops.holidays.length === 0 ? (
-              <div className="text-center py-12 rounded-2xl bg-slate-50 border border-dashed border-slate-200">
-                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">No dates set</p>
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 py-12 text-center">
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">No dates set</p>
               </div>
             ) : (
               settings.ops.holidays.map(h => (
-                <div key={h.id} className="flex items-center justify-between rounded-2xl bg-white border border-slate-100 p-4 shadow-sm group hover:border-indigo-200 transition-all">
-                  <span className="text-sm font-bold text-slate-700">
-                    {new Date(h.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-                  </span>
-                  <button 
-                    onClick={() => deleteHoliday(h.id)} 
-                    className="h-8 w-8 flex items-center justify-center rounded-lg bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100"
-                  >
-                    ×
-                  </button>
+                <div key={h.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-slate-800">{h.name}</div>
+                      <div className="mt-1 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
+                        Blackout Date
+                      </div>
+                      <div className="mt-2 text-sm text-slate-500">
+                        {new Date(h.startDate || h.date).toLocaleDateString(undefined, {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingHolidayId(h.id);
+                          setHolidayDraft({
+                            name: h.name,
+                            startDate: (h.startDate || h.date).slice(0, 10),
+                          });
+                        }}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                        aria-label={`Edit ${h.name}`}
+                      >
+                        <FiEdit2 className="text-sm" />
+                      </button>
+                      <button 
+                        onClick={() => deleteHoliday(h.id)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-500 hover:bg-rose-100"
+                        aria-label={`Delete ${h.name}`}
+                      >
+                        <FiTrash2 className="text-sm" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ))
             )}
           </div>
-        </div>
+        </section>
       </div>
+    </div>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      <div className="mt-1 text-xl font-semibold text-slate-900">{value}</div>
     </div>
   );
 }

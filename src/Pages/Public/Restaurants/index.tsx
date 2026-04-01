@@ -12,7 +12,7 @@ import Pagination from "./Pagination";
 import { getJson } from "@/lib/api";
 import { isSessionActive } from "@/lib/auth";
 import type { BackendRestaurant } from "@/lib/adapters/restaurants";
-import { mapRestaurant, buildFilters, buildFeaturedAreas } from "@/lib/adapters/restaurants";
+import { mapRestaurant, buildFilters, buildFeaturedAreas, expandBranches } from "@/lib/adapters/restaurants";
 
 type FavoriteRestaurant = { id: string; name: string; cuisine: string };
 
@@ -48,30 +48,12 @@ const Restaurants = () => {
     let mounted = true;
     setLoading(true);
 
-    const loadDummy = () => {
-      return fetch("/DummyApis/restaurants.json")
-        .then((res) => (res.ok ? res.json() : null))
-        .then((json) => {
-          if (!mounted || !json) return;
-          setData(json);
-        })
-        .catch(() => null);
-    };
-
-    if (!isAuthenticated) {
-      loadDummy().finally(() => {
-        if (mounted) setLoading(false);
-      });
-      return () => {
-        mounted = false;
-      };
-    }
-
-    getJson<{ data: BackendRestaurant[] }>("/restaurants")
+    // Use public API endpoint that doesn't require authentication
+    getJson<BackendRestaurant[]>("/public/restaurants")
       .then((response) => {
         if (!mounted) return;
         const data = response.data ?? [];
-        const restaurants = data.map(mapRestaurant);
+        const restaurants = expandBranches(data);
         setData({
           restaurants,
           filters: buildFilters(restaurants),
@@ -80,9 +62,17 @@ const Restaurants = () => {
       })
       .catch(() => {
         if (mounted) {
-          loadDummy().finally(() => {
-            if (mounted) setLoading(false);
-          });
+          // Fallback to dummy data if API fails
+          fetch("/DummyApis/restaurants.json")
+            .then((res) => (res.ok ? res.json() : null))
+            .then((json) => {
+              if (!mounted || !json) return;
+              setData(json);
+            })
+            .catch(() => null)
+            .finally(() => {
+              if (mounted) setLoading(false);
+            });
         }
       })
       .finally(() => {
@@ -92,7 +82,7 @@ const Restaurants = () => {
     return () => {
       mounted = false;
     };
-  }, [isAuthenticated]);
+  }, []);
 
   const matchesFilter = (item: RestaurantsData["restaurants"][number]) => {
     if (activeFilter === "All" || activeFilter === "Open now") return true;

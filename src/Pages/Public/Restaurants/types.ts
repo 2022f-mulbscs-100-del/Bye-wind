@@ -8,6 +8,8 @@ export type Restaurant = {
   nextSlot: string;
   tags: string[];
   image: string;
+  parentRestaurantId?: string;
+  branchId?: string;
 };
 
 export type FeaturedArea = { name: string; count: number };

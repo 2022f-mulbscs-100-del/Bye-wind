@@ -39,7 +39,9 @@ const RestaurantGrid = ({
           </div>
         ))
       ) : (
-        restaurants.map((item) => (
+        restaurants.map((item) => {
+          console.log("RestaurantCard::item", item);
+          return (
           <div
             key={item.id}
             className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
@@ -80,13 +82,13 @@ const RestaurantGrid = ({
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <Link
-                  to={`/restaurants/${item.id}`}
+                  to={item.branchId && item.parentRestaurantId ? `/restaurants/${item.parentRestaurantId}/branches/${item.branchId}` : `/restaurants/${item.id}`}
                   className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
                 >
                   View details
                 </Link>
                 <Link
-                  to={`/restaurants/${item.id}?book=1`}
+                  to={`${item.branchId && item.parentRestaurantId ? `/restaurants/${item.parentRestaurantId}/branches/${item.branchId}` : `/restaurants/${item.id}`}?book=1`}
                   className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
                 >
                   Book now
@@ -105,7 +107,8 @@ const RestaurantGrid = ({
               </div>
             </div>
           </div>
-        ))
+          );
+        })
       )}
     </div>
   );

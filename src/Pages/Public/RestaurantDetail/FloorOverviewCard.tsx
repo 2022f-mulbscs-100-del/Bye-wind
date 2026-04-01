@@ -35,8 +35,11 @@ const zoneStyle: Record<string, { text: string; bg: string; border: string }> = 
 
 const shapeClass: Record<string, string> = {
   Round: "rounded-full",
+  ROUND: "rounded-full",
   Square: "rounded-xl",
+  SQUARE: "rounded-xl",
   Rectangle: "rounded-2xl",
+  RECTANGLE: "rounded-2xl",
 };
 
 const FloorOverviewCard = ({

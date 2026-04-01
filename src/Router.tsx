@@ -221,6 +221,10 @@ export const Router = createBrowserRouter([
   //   element: <CartPage />,
   // },
   {
+    path: "/restaurants/:restaurantId/branches/:branchId",
+    element: <RestaurantDetail />,
+  },
+  {
     path: "/restaurants/:id",
     element: <RestaurantDetail />,
   },

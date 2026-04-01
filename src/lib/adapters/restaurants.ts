@@ -56,6 +56,36 @@ export const mapRestaurant = (item: BackendRestaurant): Restaurant => {
   };
 };
 
+export const expandBranches = (restaurants: BackendRestaurant[]): Restaurant[] => {
+  const expanded: Restaurant[] = [];
+  
+  restaurants.forEach((restaurant) => {
+    const baseRestaurant = mapRestaurant(restaurant);
+    const branches = restaurant.branches ?? [];
+    
+    // If no branches, show the restaurant as is
+    if (branches.length === 0) {
+      expanded.push(baseRestaurant);
+      return;
+    }
+    
+    // Expand each branch as a separate item
+    branches.forEach((branch) => {
+      expanded.push({
+        ...baseRestaurant,
+        id: restaurant.id, // Use RESTAURANT ID for API calls
+        name: branch.name 
+          ? `${baseRestaurant.name} (${branch.name})` 
+          : baseRestaurant.name,
+        parentRestaurantId: restaurant.id,
+        branchId: branch.id, // Store branch ID for reference
+      });
+    });
+  });
+  
+  return expanded;
+};
+
 export const buildFilters = (restaurants: Restaurant[]) => {
   const filterSet = new Set<string>();
   restaurants.forEach((restaurant) => {

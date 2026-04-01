@@ -11,6 +11,35 @@ export type BackendRestaurantDetail = BackendRestaurant & {
   timezone?: string;
   status?: string;
   description?: string;
+  branchesDetail?: Array<{
+    id: string;
+    name: string;
+    address: string;
+    phone: string;
+    email: string;
+    menuItems?: Array<{
+      id: string;
+      name: string;
+      description: string;
+      price: number;
+      category: string;
+      images?: string[];
+    }>;
+    businessHours?: Array<{
+      id: string;
+      day: string;
+      openTime: string;
+      closeTime: string;
+    }>;
+    floorPlans?: Array<{
+      id: string;
+      label: string;
+      width: number;
+      height: number;
+      tables?: Array<any>;
+      layout?: any;
+    }>;
+  }>;
 };
 
 const placeholderImages = [
@@ -51,9 +80,9 @@ export type RestaurantDetailEntry = {
   phone: string;
   hours: string;
   description: string;
-  images: string[];
-  menu: { name: string; price: string; description: string }[];
-  reviews: { author: string; rating: number; text: string }[];
+  images?: string[];
+  menu?: { name: string; price: string; description: string }[];
+  reviews?: { author: string; rating: number; text: string }[];
   floorHighlights?: { label: string; value: string }[];
   floorTables?: {
     id: string;

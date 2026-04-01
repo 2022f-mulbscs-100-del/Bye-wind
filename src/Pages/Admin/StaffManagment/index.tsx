@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { FiEdit2, FiPlus, FiTrash2 } from "react-icons/fi";
+import { FiEdit2, FiEye, FiPlus, FiTrash2 } from "react-icons/fi";
 import { postJson, getJson, putJson } from "@/lib/api";
 import { getStoredRestaurantId, isSessionActive } from "@/lib/auth";
 import { useBranchContext } from "@/context/BranchContext";
@@ -357,6 +358,14 @@ const StaffManagment = () => {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
+                        <Link
+                          to={`/dashboard/staff/${staff.id}`}
+                          className="rounded-full border border-slate-200 bg-white p-2 text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                          aria-label={`View ${fullName(staff)}`}
+                          title="View profile"
+                        >
+                          <FiEye />
+                        </Link>
                         <button
                           type="button"
                           onClick={() => void openForm(staff)}
@@ -516,6 +525,24 @@ const StaffManagment = () => {
                         </button>
                       </div>
                     </div>
+                    {selectedStaff.password && (
+                      <div>
+                        <div className="text-xs text-slate-500">Password</div>
+                        <div className="text-sm font-medium text-slate-900 flex items-center gap-2">
+                          {selectedStaff.password}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(selectedStaff.password || '');
+                              toast.success('Password copied!');
+                            }}
+                            className="text-xs text-slate-500 hover:text-slate-700"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     <div>
                       <div className="text-xs text-slate-500">Created</div>
                       <div className="text-sm font-medium text-slate-900">
