@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { FiHome, FiMail, FiPhone, FiUserCheck, FiKey, FiCopy } from "react-icons/fi";
+import {
+  FiArrowLeft,
+  FiCopy,
+  FiHome,
+  FiKey,
+  FiMail,
+  FiPhone,
+  FiUserCheck,
+} from "react-icons/fi";
 import { toast } from "sonner";
 import { getStoredRestaurantId, isSessionActive } from "@/lib/auth";
 import { getJson } from "@/lib/api";
@@ -103,31 +111,53 @@ const StaffProfile = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <Link
-          to="/dashboard/staff"
-          className="inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50"
-        >
-          Back to Staff Management
-        </Link>
-        <div className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${staff.isActive ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-          {staff.isActive ? 'Active' : 'Deactivated'}
+      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <Link
+              to="/dashboard/staff"
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50"
+            >
+              <FiArrowLeft />
+              Back to Staff Management
+            </Link>
+            <div className="mt-5 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Staff Profile
+            </div>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">
+              {staff.firstName} {staff.lastName}
+            </h1>
+            <p className="mt-2 text-sm text-slate-500">
+              Review contact details, branch assignments, account status, and login credentials.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className={`rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-wider ${staff.isActive ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+              {staff.isActive ? 'Active' : 'Deactivated'}
+            </div>
+            <div className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-slate-600">
+              {staff.role.replace('_', ' ')}
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-500 shadow-inner">
+        <div className="mt-6 flex flex-wrap items-center gap-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 shadow-inner">
             <FiUserCheck className="text-2xl" />
           </div>
           <div>
-            <div className="text-2xl font-bold text-slate-900">
-              {staff.firstName} {staff.lastName}
+            <div className="text-sm font-medium text-slate-500">Username</div>
+            <div className="text-lg font-semibold text-slate-900">{staff.staffUsername || "Not assigned"}</div>
+          </div>
+          <div className="h-10 w-px bg-slate-200" />
+          <div>
+            <div className="text-sm font-medium text-slate-500">Member since</div>
+            <div className="text-lg font-semibold text-slate-900">
+              {new Date(staff.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
             </div>
-            <div className="text-sm font-medium text-slate-500 uppercase tracking-wide">{staff.role.replace('_', ' ')}</div>
           </div>
         </div>
-      </div>
+      </section>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -226,4 +256,3 @@ const StaffProfile = () => {
 };
 
 export default StaffProfile;
-

@@ -250,6 +250,7 @@ const Icons = {
   ChevronDown:  () => <Icon d="M6 9l6 6 6-6" />,
   Layers:       () => <Icon d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />,
   Table:        () => <Icon d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18" />,
+  Zap:          () => <Icon d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />,
 };
 
 // ── main component ────────────────────────────────────────────────────────────
@@ -268,6 +269,12 @@ export default function FloorManagement() {
   const [deleteModal, setDeleteModal]     = useState<boolean>(false);
   const [areaDraft, setAreaDraft]         = useState<AreaDraft>(DEFAULT_AREA_DRAFT);
   const [isLoading, setIsLoading]         = useState<boolean>(false);
+  const [quickAddModal, setQuickAddModal]   = useState<boolean>(false);
+  const [quickAddCount, setQuickAddCount]   = useState<number>(5);
+  const [quickAddZone, setQuickAddZone]     = useState<Zone>("Indoor");
+  const [quickAddFloorId, setQuickAddFloorId] = useState<string>("f1");
+  const [manageTablesModal, setManageTablesModal] = useState<boolean>(false);
+  const [manageTablesFloorId, setManageTablesFloorId] = useState<string>("f1");
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -444,6 +451,58 @@ export default function FloorManagement() {
     setAreaDraft(p => ({ ...p, label: "" }));
     setSelectedAreaId(a.id);
     toast.info("Zone added locally. Save layout to persist.");
+  };
+
+  const quickAddTables = () => {
+    const count = Math.max(1, Math.min(50, quickAddCount)); // Limit 1-50 tables
+    const newTables: Table[] = [];
+    
+    // Grid layout: calculate rows and columns
+    const cols = Math.ceil(Math.sqrt(count));
+    const rows = Math.ceil(count / cols);
+    const spacing = 20; // Space between tables
+    const tableWidth = 90;
+    const tableHeight = 90;
+    const startX = 80;
+    const startY = 60;
+    
+    let index = 0;
+    for (let r = 0; r < rows && index < count; r++) {
+      for (let c = 0; c < cols && index < count; c++) {
+        const newId = `temp-t-${Date.now()}-${index}`;
+        const table: Table = {
+          id: newId,
+          name: `Table ${String(index + 1).padStart(2, "0")}`,
+          x: startX + c * (tableWidth + spacing),
+          y: startY + r * (tableHeight + spacing),
+          width: tableWidth,
+          height: tableHeight,
+          rotation: 0,
+          seats: 4,
+          spacing: 12,
+          zone: quickAddZone,
+          shape: "Round"
+        };
+        newTables.push(table);
+        index++;
+      }
+    }
+    
+    // Add tables to the selected floor ONLY
+    const targetFloorId = quickAddFloorId;
+    setFloorLayouts(prev => {
+      const floorLayout = prev[targetFloorId] || { tables: [], areas: [], selectedTableId: "", selectedAreaId: "" };
+      return {
+        ...prev,
+        [targetFloorId]: {
+          ...floorLayout,
+          tables: [...newTables, ...floorLayout.tables]
+        }
+      };
+    });
+    
+    setQuickAddModal(false);
+    toast.success(`Added ${count} tables to floor. Save to persist.`);
   };
 
   const deleteTableLocal = (id: string) => {
@@ -868,6 +927,18 @@ export default function FloorManagement() {
             </div>
             <div className="fm-topbar-stats" style={{ fontSize: 12, color: "#94a3b8", fontWeight: 500 }}>
               {tables.length} tables · {areas.length} areas
+              <span style={{ marginLeft: 12, color: "#0f172a", fontWeight: 600 }}>
+                Branch: {Object.values(floorLayouts).reduce((sum, layout) => sum + layout.tables.length, 0)} tables · {floors.length} floors
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Btn 
+                variant="solid"
+                onClick={() => { setManageTablesFloorId(activeFloorId); setManageTablesModal(true); }}
+                title="Manage tables for all floors"
+              >
+                <Icons.Table /> Manage Tables
+              </Btn>
             </div>
           </div>
           <div className="fm-floor-actions" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
@@ -954,6 +1025,7 @@ export default function FloorManagement() {
             </Btn>
             <Btn variant="solid" onClick={handleSaveLayout} style={{ background: "#22c55e", borderColor: "#22c55e" }}>Save Layout</Btn>
             <Btn variant="solid" onClick={addTable}><Icons.Plus /> Add table</Btn>
+            <Btn variant="solid" onClick={() => { setQuickAddFloorId(activeFloorId); setQuickAddModal(true); }}><Icons.Zap /> Quick Add</Btn>
           </div>
         </div>
       </Card>
@@ -1189,6 +1261,166 @@ export default function FloorManagement() {
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <Btn onClick={() => setDeleteModal(false)}>Cancel</Btn>
               <Btn variant="danger" onClick={deleteFloor}><Icons.Trash /> Delete floor</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── quick add tables modal ── */}
+      {quickAddModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(15,23,42,0.5)", padding: 16, backdropFilter: "blur(2px)" }}>
+          <div style={{ background: "#fff", borderRadius: 20, border: "1.5px solid #e2e8f0", padding: 24, maxWidth: 380, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", marginBottom: 4 }}>Quick Add Tables</div>
+            <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 16px" }}>Automatically generate and position tables on the floor.</p>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
+              <div>
+                <Label>Number of tables</Label>
+                <Input 
+                  type="number" 
+                  min={1} 
+                  max={50} 
+                  value={quickAddCount}
+                  onChange={e => setQuickAddCount(Math.max(1, Math.min(50, +e.target.value)))}
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <div>
+                <Label>Zone</Label>
+                <Select 
+                  value={quickAddZone}
+                  onChange={e => setQuickAddZone(e.target.value as Zone)}
+                  style={{ width: "100%" }}
+                >
+                  {zones.map(z => <option key={z}>{z}</option>)}
+                </Select>
+              </div>
+              <div>
+                <Label>Floor</Label>
+                <Select 
+                  value={quickAddFloorId}
+                  onChange={e => setQuickAddFloorId(e.target.value)}
+                  style={{ width: "100%" }}
+                >
+                  {floors.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+                </Select>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Btn onClick={() => setQuickAddModal(false)}>Cancel</Btn>
+              <Btn variant="solid" onClick={quickAddTables} style={{ background: "#3b82f6", borderColor: "#3b82f6" }}>
+                <Icons.Zap /> Generate
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── manage tables modal ── */}
+      {manageTablesModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(15,23,42,0.5)", padding: 16, backdropFilter: "blur(2px)" }}>
+          <div style={{ background: "#fff", borderRadius: 20, border: "1.5px solid #e2e8f0", padding: 0, maxWidth: 600, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.15)", maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
+            
+            {/* Modal header */}
+            <div style={{ padding: "20px 24px", borderBottom: "1.5px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>Manage Tables</div>
+                <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>
+                  {floors.find(f => f.id === manageTablesFloorId)?.label} · {floorLayouts[manageTablesFloorId]?.tables.length || 0} tables
+                </div>
+              </div>
+              <button onClick={() => setManageTablesModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 20 }}>✕</button>
+            </div>
+
+            {/* Floor tabs */}
+            <div style={{ padding: "16px 24px", borderBottom: "1.5px solid #e2e8f0", display: "flex", alignItems: "center", gap: 6, overflowX: "auto" }}>
+              {floors.map(f => (
+                <button
+                  key={f.id}
+                  onClick={() => setManageTablesFloorId(f.id)}
+                  style={{
+                    border: "1.5px solid",
+                    borderRadius: 999,
+                    padding: "6px 14px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                    borderColor: f.id === manageTablesFloorId ? "#0f172a" : "#e2e8f0",
+                    background: f.id === manageTablesFloorId ? "#0f172a" : "#fff",
+                    color: f.id === manageTablesFloorId ? "#fff" : "#64748b",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Tables list */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px", display: "flex", flexDirection: "column", gap: 8 }}>
+              {!floorLayouts[manageTablesFloorId] || floorLayouts[manageTablesFloorId]?.tables.length === 0 ? (
+                <div style={{ fontSize: 13, color: "#94a3b8", textAlign: "center", padding: "32px 16px" }}>No tables on this floor</div>
+              ) : (
+                floorLayouts[manageTablesFloorId].tables.map(t => {
+                  return (
+                    <div
+                      key={t.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        padding: "12px 14px",
+                        borderRadius: 12,
+                        border: "1.5px solid #e2e8f0",
+                        background: "#f8fafc",
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{t.name}</div>
+                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+                          {t.shape} · {t.seats} seats · {t.zone}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setFloorLayouts(prev => ({
+                            ...prev,
+                            [manageTablesFloorId]: {
+                              ...prev[manageTablesFloorId],
+                              tables: prev[manageTablesFloorId].tables.filter(table => table.id !== t.id)
+                            }
+                          }));
+                          toast.success(`${t.name} deleted`);
+                        }}
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: "50%",
+                          border: "1.5px solid #fecdd3",
+                          background: "#fff1f2",
+                          cursor: "pointer",
+                          color: "#be123c",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                        title="Delete table"
+                      >
+                        <Icons.Trash />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Modal footer */}
+            <div style={{ padding: "16px 24px", borderTop: "1.5px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 12, color: "#94a3b8" }}>💡 Click "Save Layout" in the main toolbar to persist changes</div>
+              <Btn onClick={() => setManageTablesModal(false)}>Close</Btn>
             </div>
           </div>
         </div>

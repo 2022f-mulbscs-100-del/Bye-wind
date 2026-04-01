@@ -2,7 +2,15 @@ import Loader from "../../../Components/loader";
 
 type ReservationStep = "slot" | "table" | "payment" | "confirm";
 type Slot = { id: string; label: string; status: "Available" | "Limited" | "Full" };
-type TableOption = { id: string; label: string; seats: number; zone: string };
+type TableOption = { 
+  id: string; 
+  label: string; 
+  seats: number; 
+  zone: string; 
+  isAvailable?: boolean; 
+  isReserved?: boolean;
+  turnTimeMins?: number;
+};
 type PaymentMethod = { id: string; label: string };
 
 type SummaryItem = { label: string; value: string };
@@ -178,23 +186,60 @@ const ReservationModal = ({
               ) : null}
 
               {step === "table" ? (
-                <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {(tables ?? []).map((table) => (
-                    <button
-                      key={table.id}
-                      onClick={() => onSelectTable(table)}
-                      className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold ${
-                        selectedTableId === table.id
-                          ? "border-slate-900 bg-slate-900 text-white"
-                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                      }`}
-                    >
-                      <div>{table.label}</div>
-                      <div className="mt-1 text-xs font-medium text-slate-400">
-                        {table.zone} · {table.seats} seats
-                      </div>
-                    </button>
-                  ))}
+                <div className="mt-6">
+                  <div className="mb-4 flex gap-3">
+                    <div className="flex items-center gap-2 text-xs">
+                      <div className="h-3 w-3 rounded-full bg-emerald-500"></div>
+                      <span className="text-slate-600">Available</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <div className="h-3 w-3 rounded-full bg-slate-300"></div>
+                      <span className="text-slate-600">Reserved</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {(tables ?? []).map((table) => {
+                      // Calculate when the table will be available again if booked now
+                      const turnTimeHours = Math.floor((table.turnTimeMins ?? 90) / 60);
+                      const turnTimeMins = (table.turnTimeMins ?? 90) % 60;
+                      const durationText = turnTimeHours > 0 
+                        ? `${turnTimeHours}h ${turnTimeMins}m`
+                        : `${turnTimeMins}m`;
+
+                      return (
+                        <button
+                          key={table.id}
+                          onClick={() => table.isAvailable && onSelectTable(table)}
+                          disabled={!table.isAvailable}
+                          className={`rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
+                            !table.isAvailable
+                              ? "border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed"
+                              : selectedTableId === table.id
+                              ? "border-slate-900 bg-slate-900 text-white"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span>{table.label}</span>
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                table.isAvailable
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-slate-200 text-slate-600"
+                              }`}
+                            >
+                              <span className="h-2 w-2 rounded-full bg-current"></span>
+                              {table.isAvailable ? "Available" : "Reserved"}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex items-center justify-between text-xs font-medium text-slate-400">
+                            <span>{table.zone} · {table.seats} seats</span>
+                            <span className="text-slate-500">~{durationText} dine</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               ) : null}
 

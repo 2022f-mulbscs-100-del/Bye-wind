@@ -6,6 +6,7 @@ import {
   FiBriefcase,
   FiChevronLeft,
   FiChevronRight,
+  FiChevronDown,
   FiCreditCard,
   FiGrid,
   FiHome,
@@ -27,6 +28,7 @@ const iconMap: Record<string, IconType> = {
   Dashboard: FiHome,
   "Branches Managment": FiGrid,
   "Staff Managment": FiUsers,
+  "Menu Management": FiShoppingBag,
   "Business Hours": FiClock,
   "Reservation Rules": FiCheckCircle,
   "Turn Times": FiClock,
@@ -37,6 +39,7 @@ const iconMap: Record<string, IconType> = {
   Marketing: FiBarChart2,
   Analytics: FiBarChart2,
   Settings: FiSettings,
+  "Restaurant Settings": FiSettings,
   Onboarding: FiZap,
   "Floor Managment": FiLayers,
 };
@@ -49,6 +52,7 @@ const SideBar = () => {
   const { branches, selectedBranchId, setSelectedBranchId } = useBranchContext();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const groupSwitcherRef = useRef<HTMLDivElement | null>(null);
 
   const sidebarGroups = useMemo(() => {
@@ -88,6 +92,11 @@ const SideBar = () => {
         return isMaster;
       }
 
+      // Menu Management shows everywhere
+      if (item.name === "Menu Management") {
+        return true;
+      }
+
       // Staff Management is now always visible (branch selection filters the list)
       if (item.name === "Staff Managment") {
         return true;
@@ -99,9 +108,10 @@ const SideBar = () => {
         return !isCurrentLive;
       }
 
-      // Settings only shows at Master level (All Branches)
+      // Settings (parent) - visible at branch level always
       if (item.name === "Settings") {
-        return isMaster;
+        if (isMaster) return true;
+        return !isMaster;
       }
 
       // Operational items show in Master if at least one branch is live, 
@@ -120,11 +130,6 @@ const SideBar = () => {
       if (item.name === "Dashboard") {
         if (isMaster) return true;
         return isCurrentLive;
-      }
-
-      // Settings decomposition items (Hours, Rules, Turns) only in Branch Level
-      if (["Business Hours", "Reservation Rules", "Turn Times", "Floor Managment"].includes(item.name)) {
-        return !isMaster;
       }
 
       return true;
@@ -290,11 +295,13 @@ const SideBar = () => {
           <nav className="flex flex-col space-y-1">
             {activeGroup.items.map((item) => {
               const Icon = iconMap[item.name] ?? FiHome;
+              const hasChildren = item.children && item.children.length > 0;
+              const isExpanded = expandedItems.has(item.name);
 
               const hasBranches = branches.length > 0;
               const isAllBranches = selectedBranchId === null;
               const selectedBranch = branches.find((b) => b.id === selectedBranchId);
-              const isBranchLive = selectedBranch?.isLive || false;
+              const isBranchLive = (selectedBranch?.status || "").toUpperCase() === "LIVE";
 
               // CUSTOM FILTERING LOGIC
               let showItem = true;
@@ -308,21 +315,12 @@ const SideBar = () => {
               } else if (item.name === "Payment") {
                 // Show Payment only for "All Branches"
                 showItem = isAllBranches;
-              } else if (["Staff Managment", "Settings", "Floor Managment"].includes(item.name)) {
-                // Show if: 
-                // 1. One branch exists (Global condition)
-                // 2. All branches selected (Master view)
-                // 3. Specific branch selected (always for Staff/Floor, maybe only not-live for Settings? but let's prioritize visibility for single branch)
-                const isSingleBranch = branches.length === 1;
-                if (isSingleBranch) {
-                  showItem = true;
-                } else if (item.name === "Settings") {
-                  showItem = isAllBranches || (!isAllBranches && !isBranchLive);
-                } else {
-                  // Staff and Floor Management should show always at branch level, 
-                  // and Staff also shows at master level.
-                  showItem = true;
-                }
+              } else if (["Staff Managment", "Menu Management"].includes(item.name)) {
+                // Staff and Menu always show
+                showItem = true;
+              } else if (item.name === "Settings") {
+                // Settings parent: always visible at branch level
+                showItem = !isAllBranches;
               } else if (["Reservation", "Orders", "Guest CRM", "Marketing", "Analytics"].includes(item.name)) {
                 // Show if: 
                 // 1. One branch exists (Global condition)
@@ -337,10 +335,92 @@ const SideBar = () => {
 
               if (!showItem) return null;
 
+              // Render parent item with children
+              if (hasChildren) {
+                return (
+                  <div key={item.name}>
+                    {/* Divider before Settings */}
+                    {item.name === "Settings" && (
+                      <div className={`${isCollapsed ? "mx-4 my-2" : "mx-4 my-3"}`}>
+                        <div className="h-px bg-slate-200" />
+                      </div>
+                    )}
+
+                    {/* Parent item button */}
+                    <button
+                      onClick={() => {
+                        const newExpandedItems = new Set(expandedItems);
+                        if (newExpandedItems.has(item.name)) {
+                          newExpandedItems.delete(item.name);
+                        } else {
+                          newExpandedItems.add(item.name);
+                        }
+                        setExpandedItems(newExpandedItems);
+                      }}
+                      className={`w-full flex  rounded-xl text-sm transition-[margin,padding,colors] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${isCollapsed ? "mx-4 px-2 py-2" : "mx-4 px-3 py-2 gap-3"
+                        } ${isExpanded
+                          ? ""
+                          : "text-slate-600 "
+                        }`}
+                    >
+                      <span className="flex h-5 w-5 items-center justify-center flex-shrink-0">
+                        <Icon className="text-base" />
+                      </span>
+
+                      <span
+                        className={`overflow-hidden whitespace-nowrap transition-[opacity,transform] mr-22 duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${isCollapsed
+                            ? "opacity-0 -translate-x-1 pointer-events-none w-0"
+                            : "opacity-100 translate-x-0   "
+                          }`}
+                      >
+                        {item.name}
+                      </span>
+
+                      <span className={`flex h-5 w-5 items-center justify-center flex-shrink-0 transition-transform duration-300 ${isExpanded ? "rotate-180" : ""} ${isCollapsed ? "hidden" : ""}`}>
+                        <FiChevronDown className="text-base" />
+                      </span>
+                    </button>
+
+                    {/* Children items */}
+                    {isExpanded && !isCollapsed && (
+                      <div className="flex flex-col space-y-1 mt-2 mb-2">
+                        {item.children!.map((childItem) => {
+                          const ChildIcon = iconMap[childItem.name] ?? FiHome;
+
+                          return (
+                            <NavLink
+                              key={childItem.name}
+                              to={childItem.path!}
+                              end={childItem.path === "/dashboard"}
+                              className={({ isActive }) =>
+                                `flex items-center gap-3 rounded-xl text-sm transition-[colors,background] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] mx-6 px-3 py-2 font-medium ${
+                                  isActive
+                                    ? "bg-blue-50 text-blue-600"
+                                    : "text-slate-600 hover:bg-slate-50"
+                                }`
+                              }
+                            >
+                              <span className="flex h-5 w-5 items-center justify-center flex-shrink-0">
+                                <ChildIcon className="text-base" />
+                              </span>
+
+                              <span className="overflow-hidden whitespace-nowrap flex-1">
+                                {childItem.name}
+                              </span>
+                            </NavLink>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              // Render regular item (no children)
               return (
                 <NavLink
                   key={item.name}
-                  to={item.path}
+                  to={item.path!}
                   end={item.path === "/dashboard"}
                   className={({ isActive }) =>
                     `grid items-center rounded-xl text-sm transition-[margin,padding] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${isCollapsed ? "mx-4 px-2 py-2" : "mx-4 px-3 py-2"
