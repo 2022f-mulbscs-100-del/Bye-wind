@@ -31,26 +31,28 @@ const Login = () => {
     }
 
     try {
-      const response = await postJson<{ staff: StaffSummary; token: string }>(
-        "/staff/login",
+      const response = await postJson<{ user: StaffSummary; token: string }>(
+        "/auth/login",
         {
           email,
           password,
         }
       );
       const payload = response.data;
-      if (!payload || !payload.staff || !payload.token) {
+      if (!payload || !payload.user || !payload.token) {
         throw new Error("Unexpected response from server");
       }
 
-      persistAuthSession(payload.token, payload.staff);
-      const uiRole = mapBackendRoleToBrowserRole(payload.staff.role);
+      persistAuthSession(payload.token, payload.user);
+      const uiRole = mapBackendRoleToBrowserRole(payload.user.role);
       setError("");
-      if (uiRole === "super-admin") {
+      // Role-based routing
+      if (uiRole === "admin") {
         navigate("/super-admin");
-      } else if (uiRole === "admin") {
+      } else if (uiRole === "owner" || uiRole === "staff" || uiRole === "manager") {
         navigate("/dashboard");
       } else {
+        // GUEST users - go to guest profile
         navigate("/guest-profile");
       }
     } catch (err) {

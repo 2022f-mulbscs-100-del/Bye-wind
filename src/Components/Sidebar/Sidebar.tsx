@@ -21,6 +21,7 @@ import {
 import { AdminBranchLevel, AdminMasterLevel } from "../../../public/SideBarData";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useBranchContext } from "@/context/BranchContext";
+import { useGoLiveContext } from "@/context/GoLiveContext";
 
 // defaultSidebarGroups was unused and removed.
 
@@ -40,6 +41,7 @@ const iconMap: Record<string, IconType> = {
   Analytics: FiBarChart2,
   Settings: FiSettings,
   "Restaurant Settings": FiSettings,
+  "Master Config": FiSettings,
   Onboarding: FiZap,
   "Floor Managment": FiLayers,
 };
@@ -50,6 +52,7 @@ const COLLAPSED_WIDTH = 72;
 const SideBar = () => {
   const navigate = useNavigate();
   const { branches, selectedBranchId, setSelectedBranchId } = useBranchContext();
+  const { goLiveStatus } = useGoLiveContext();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
@@ -302,25 +305,20 @@ const SideBar = () => {
               const isAllBranches = selectedBranchId === null;
               const selectedBranch = branches.find((b) => b.id === selectedBranchId);
               const isBranchLive = (selectedBranch?.status || "").toUpperCase() === "LIVE";
+              const isRestaurantLive = goLiveStatus?.isLive || false;
 
               // CUSTOM FILTERING LOGIC
               let showItem = true;
 
               if (item.name === "Onboarding") {
-                // Show if: (0 branches) OR (specific branch selected AND not live)
-                showItem = !hasBranches || (!isAllBranches && !isBranchLive);
+                // Show if the current view (Master or Branch) is NOT yet live
+                showItem = isAllBranches ? !isRestaurantLive : !isBranchLive;
               } else if (item.name === "Dashboard") {
                 // Show if: (has branches) AND (all branches selected OR specific branch is live)
                 showItem = hasBranches && (isAllBranches || isBranchLive);
-              } else if (item.name === "Payment") {
-                // Show Payment only for "All Branches"
-                showItem = isAllBranches;
-              } else if (["Staff Managment", "Menu Management"].includes(item.name)) {
-                // Staff and Menu always show
+              } else if (["Staff Managment", "Menu Management", "Settings"].includes(item.name)) {
+                // These always show
                 showItem = true;
-              } else if (item.name === "Settings") {
-                // Settings parent: always visible at branch level
-                showItem = !isAllBranches;
               } else if (["Reservation", "Orders", "Guest CRM", "Marketing", "Analytics"].includes(item.name)) {
                 // Show if: 
                 // 1. One branch exists (Global condition)
@@ -328,7 +326,7 @@ const SideBar = () => {
                 // 3. All branches selected AND at least one branch is live
                 const isSingleBranch = branches.length === 1;
                 showItem = isSingleBranch || (!isAllBranches && isBranchLive) || (isAllBranches && branches.some(b => b.isLive));
-              } else if (item.name === "Branches Managment") {
+              } else if (["Branches Managment", "Restaurant Settings", "Payment"].includes(item.name)) {
                 // Only for "All Branches" view
                 showItem = isAllBranches && hasBranches;
               }

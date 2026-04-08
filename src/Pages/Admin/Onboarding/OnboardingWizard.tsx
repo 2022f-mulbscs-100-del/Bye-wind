@@ -7,7 +7,7 @@ import ReviewGoLive from "./components/ReviewGoLive";
 import OnboardingStep from "./components/OnboardingStep";
 
 export default function OnboardingWizard() {
-  const { goLiveStatus, refreshGoLiveStatus } = useGoLiveContext();
+  const { goLiveStatus, refreshGoLiveStatus, isLoadingGoLive } = useGoLiveContext();
   const { selectedBranchId, branches } = useBranchContext();
   const [currentStep, setCurrentStep] = useState(1);
 
@@ -27,6 +27,11 @@ export default function OnboardingWizard() {
   const activeChecklist = branchStatus || goLiveStatus;
 
   useEffect(() => {
+    // Refresh status on mount to ensure we have the latest from backend
+    void refreshGoLiveStatus();
+  }, [refreshGoLiveStatus]);
+
+  useEffect(() => {
     // Only auto-jump on the very first time we get goLiveStatus
     if (activeChecklist && !hasInitialized) {
       // For branch-level: only show first 4 steps
@@ -35,7 +40,7 @@ export default function OnboardingWizard() {
         else if (!branchStatus.floorPlanDone || !branchStatus.tablesConfiguredDone) setCurrentStep(3);
         else if (!branchStatus.reservationPolicyDone) setCurrentStep(4);
         else setCurrentStep(5); // Review step for branch
-      } else {
+      } else if (goLiveStatus) {
         // For restaurant-level: show all steps
         if (!goLiveStatus.branchSetupDone) setCurrentStep(1);
         else if (!goLiveStatus.businessHoursDone) setCurrentStep(2);
@@ -52,10 +57,24 @@ export default function OnboardingWizard() {
     }
   }, [activeChecklist, branchStatus, goLiveStatus, hasInitialized]);
 
-  if (!goLiveStatus) {
+  if (isLoadingGoLive) {
     return (
       <div className="flex h-[60vh] w-full items-center justify-center">
         <Loader size={40} />
+      </div>
+    );
+  }
+
+  if (!goLiveStatus) {
+    return (
+      <div className="flex h-[60vh] w-full flex-col items-center justify-center space-y-4">
+        <p className="text-slate-500">Unable to load onboarding status.</p>
+        <button
+          onClick={refreshGoLiveStatus}
+          className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+        >
+          Try Again
+        </button>
       </div>
     );
   }
@@ -112,7 +131,7 @@ export default function OnboardingWizard() {
             description="Add your team members and assign roles. Ensure your hosts and staff have access to manage daily operations."
             linkText="Invite Staff"
             linkPath="/dashboard/staff"
-            isCompleted={goLiveStatus?.staffSetupDone ?? false}
+            isCompleted={activeChecklist?.staffSetupDone ?? false}
             onNext={handleNext}
             onBack={handleBack}
           />
@@ -182,27 +201,27 @@ export default function OnboardingWizard() {
   // and restaurant items (1, 6-8) as already completed
   const stepStatus = branchStatus
     ? [
-        true, // 1. Location - Done (restaurant-level)
-        branchStatus.businessHoursDone, // 2. Hours - Branch-level
-        branchStatus.floorPlanDone && branchStatus.tablesConfiguredDone, // 3. Tables - Branch-level
-        branchStatus.reservationPolicyDone && branchStatus.turnTimesDone, // 4. Rules - Branch-level
-        false, // 5. Staff - Not tracked per branch yet (branch-level)
-        true, // 6. Payments - Done (restaurant-level)
-        true, // 7. Comms - Done (restaurant-level)
-        true, // 8. Widget - Done (restaurant-level)
-        branchStatus.completionPercentage === 100 && (goLiveStatus?.branchSetupDone ?? false), // 9. Review
-      ]
+      goLiveStatus?.branchSetupDone ?? false, // 1. Location
+      branchStatus.businessHoursDone, // 2. Hours - Branch-level
+      branchStatus.floorPlanDone && branchStatus.tablesConfiguredDone, // 3. Tables - Branch-level
+      branchStatus.reservationPolicyDone && branchStatus.turnTimesDone, // 4. Rules - Branch-level
+      branchStatus.staffSetupDone, // 5. Staff - Now branch-level
+      goLiveStatus?.paymentConfiguredDone ?? false, // 6. Payments
+      goLiveStatus?.communicationDone ?? false, // 7. Comms
+      goLiveStatus?.brandingDone ?? false, // 8. Widget
+      branchStatus.completionPercentage === 100 && (goLiveStatus?.branchSetupDone ?? false), // 9. Review
+    ]
     : [
-        goLiveStatus.branchSetupDone, // 1. Location
-        goLiveStatus.businessHoursDone, // 2. Hours
-        goLiveStatus.floorPlanDone && goLiveStatus.tablesConfiguredDone, // 3. Tables
-        goLiveStatus.reservationPolicyDone && goLiveStatus.turnTimesDone, // 4. Rules
-        goLiveStatus.staffSetupDone, // 5. Staff
-        goLiveStatus.paymentConfiguredDone, // 6. Payments
-        goLiveStatus.communicationDone, // 7. Comms
-        goLiveStatus.brandingDone, // 8. Widget
-        goLiveStatus.completionPercentage === 100, // 9. Review
-      ];
+      goLiveStatus.branchSetupDone, // 1. Location
+      goLiveStatus.businessHoursDone, // 2. Hours
+      goLiveStatus.floorPlanDone && goLiveStatus.tablesConfiguredDone, // 3. Tables
+      goLiveStatus.reservationPolicyDone && goLiveStatus.turnTimesDone, // 4. Rules
+      goLiveStatus.staffSetupDone, // 5. Staff
+      goLiveStatus.paymentConfiguredDone, // 6. Payments
+      goLiveStatus.communicationDone, // 7. Comms
+      goLiveStatus.brandingDone, // 8. Widget
+      goLiveStatus.completionPercentage === 100, // 9. Review
+    ];
 
   return (
     <div className="mx-auto max-w-4xl py-6">
@@ -211,8 +230,8 @@ export default function OnboardingWizard() {
           {hasBranches ? "Branch Setup" : "Restaurant Registration"}
         </h1>
         <p className="mt-2 text-slate-500">
-          {hasBranches 
-            ? "Complete these steps to activate your branch." 
+          {hasBranches
+            ? "Complete these steps to activate your branch."
             : "Create your first branch to get started."}
         </p>
       </div>
@@ -230,18 +249,16 @@ export default function OnboardingWizard() {
               <button
                 key={title}
                 onClick={() => setCurrentStep(stepNum)}
-                className={`flex w-full items-center gap-4 py-2 transition-opacity hover:opacity-100 opacity-${
-                  isCurrent || isCompleted ? "100" : "50"
-                }`}
+                className={`flex w-full items-center gap-4 py-2 transition-opacity hover:opacity-100 opacity-${isCurrent || isCompleted ? "100" : "50"
+                  }`}
               >
                 <div
-                  className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ring-4 ring-slate-50 ${
-                    isCompleted
+                  className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ring-4 ring-slate-50 ${isCompleted
                       ? "bg-emerald-500 text-white"
                       : isCurrent
-                      ? "bg-indigo-600 text-white"
-                      : "bg-slate-200 text-slate-500"
-                  }`}
+                        ? "bg-indigo-600 text-white"
+                        : "bg-slate-200 text-slate-500"
+                    }`}
                 >
                   {isCompleted ? "✓" : stepNum}
                 </div>

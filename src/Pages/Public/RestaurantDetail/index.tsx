@@ -8,6 +8,7 @@ import GalleryCarousel from "./GalleryCarousel";
 import RestaurantInfoCard from "./RestaurantInfoCard";
 import FloorOverviewCard from "./FloorOverviewCard";
 import MenuHighlightsCard from "./MenuHighlightsCard";
+import FullMenuCard from "./FullMenuCard";
 import BookTableCard from "./BookTableCard";
 import QuickActionsCard from "./QuickActionsCard";
 import ReviewsSection from "./ReviewsSection";
@@ -35,6 +36,12 @@ type RestaurantDetailData = {
     images?: string[];
     menu?: { name: string; price: string; description: string }[];
     reviews?: { author: string; rating: number; text: string }[];
+    businessHours?: Array<{
+      dayOfWeek?: string;
+      openTime?: string;
+      closeTime?: string;
+      isOpen?: boolean;
+    }>;
     floorHighlights?: { label: string; value: string }[];
     floorTables?: {
       id: string;
@@ -86,10 +93,10 @@ type RestaurantDetailData = {
 };
 
 type Slot = { id: string; label: string; status: "Available" | "Limited" | "Full" };
-type TableOption = { 
-  id: string; 
-  label: string; 
-  seats: number; 
+type TableOption = {
+  id: string;
+  label: string;
+  seats: number;
   zone: string;
   isAvailable?: boolean;
   isReserved?: boolean;
@@ -116,6 +123,7 @@ type BranchDataItem = {
   canvasSize?: { width: number; height: number };
   selectedFloorId?: string;
   menuHighlights?: MenuHighlight[];
+  menuItems?: Array<{ name: string; price: string; description: string; image?: string }>;
   layouts?: Record<string, { tables: FloorTable[]; areas: unknown[] }>;
 };
 
@@ -142,7 +150,7 @@ type ApiBranchDetail = {
 const formatBranchAddress = (address: unknown): string => {
   if (typeof address === 'string') return address;
   if (!address || typeof address !== 'object') return 'Address unavailable';
-  
+
   const addressObj = address as { street?: string; city?: string; state?: string; country?: string; zipCode?: string };
   const parts = [
     addressObj.street,
@@ -157,16 +165,16 @@ const RestaurantDetail = () => {
   const { id, restaurantId, branchId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  
+
   // Determine which ID to use: for new branch route or legacy route
   const actualRestaurantId = restaurantId || id;
   const selectedBranchId = branchId; // Only set if using new route
-  
+
   // Debug logging
   useEffect(() => {
     console.log("RestaurantDetail::params", { id, restaurantId, branchId, actualRestaurantId, selectedBranchId });
   }, [id, restaurantId, branchId, actualRestaurantId, selectedBranchId]);
-  
+
   const [data, setData] = useState<RestaurantDetailData>({
     restaurants: [],
     floorHighlights: [],
@@ -223,14 +231,14 @@ const RestaurantDetail = () => {
 
         const payload = response.data;
         let branchesDetail = payload.branchesDetail ?? [];
-        
+
         // If a specific branch is selected, show ONLY that branch
         if (selectedBranchId) {
           branchesDetail = branchesDetail.filter((b: ApiBranchDetail) => b.id === selectedBranchId);
         }
-        
+
         setBranchIds(branchesDetail.map((b: ApiBranchDetail) => b.id));
-        
+
         // Store branch info for later access
         const branchInfoMap: Record<string, BranchInfo> = {};
         branchesDetail.forEach((branch) => {
@@ -251,18 +259,18 @@ const RestaurantDetail = () => {
         // Set business hours for display
         setData((prev) => {
           const existing = prev.restaurants.find((item) => item.id === payload.id);
-          const mapped = mapDetailRestaurant(payload, existing);
+          const mapped = mapDetailRestaurant(payload, existing, selectedBranchId);
           const restaurants = prev.restaurants.length
             ? prev.restaurants.map((item) => (item.id === mapped.id ? mapped : item))
             : [mapped];
-          
+
           // Generate mock upcoming slots from business hours
           const upcomingSlots = [
             { name: 'Lunch', status: 'Available' as const },
             { name: 'Afternoon', status: 'Limited' as const },
             { name: 'Dinner', status: 'Available' as const },
           ];
-          
+
           const detailsEntry = {
             floorHighlights:
               mapped.floorHighlights ?? existing?.floorHighlights ?? prev.floorHighlights,
@@ -283,8 +291,22 @@ const RestaurantDetail = () => {
         // Process each branch's data
         branchesDetail.forEach((branch) => {
           // Extract menu items from this branch
-          const menuItems = (branch.menuItems ?? []).slice(0, 6);
-          const highlights: MenuHighlight[] = menuItems.map((item) => ({
+          const allMenuItems = (branch.menuItems ?? []);
+          console.log(`🍽️ Branch "${branch.name}" (ID: ${branch.id}): ${allMenuItems.length} menu items`, allMenuItems);
+          
+          if (allMenuItems.length === 0) {
+            console.warn(`⚠️ No menu items found for branch "${branch.name}". Ensure menu items exist in the database.`);
+          }
+          
+          const menuItemsForDisplay = allMenuItems.map((item: any) => ({
+            name: item.name,
+            price: `$${item.price}`,
+            description: item.description || '',
+            image: item.imageUrl || undefined,
+          }));
+
+          // Create highlights from the first 6 items
+          const highlights: MenuHighlight[] = allMenuItems.slice(0, 6).map((item: any) => ({
             name: item.name,
             description: item.description || '',
             price: `$${item.price}`,
@@ -296,7 +318,7 @@ const RestaurantDetail = () => {
           if (floorPlans.length > 0) {
             // Process ALL floors, not just the first one
             const layouts: Record<string, { tables: FloorTable[]; areas: unknown[] }> = {};
-            
+
             floorPlans.forEach((floorPlan) => {
               const tables = (floorPlan.tables ?? []).map((table) => {
                 // Normalize shape: ROUND -> Round, SQUARE -> Square, RECTANGLE -> Rectangle
@@ -307,7 +329,7 @@ const RestaurantDetail = () => {
                   if (upper === 'SQUARE') return 'Square';
                   return 'Rectangle';
                 };
-                
+
                 return {
                   id: table.id,
                   x: table.positionX,
@@ -321,7 +343,7 @@ const RestaurantDetail = () => {
                   rotation: table.rotation ?? 0,
                 };
               });
-              
+
               layouts[floorPlan.id] = {
                 tables: tables,
                 areas: [],
@@ -340,6 +362,7 @@ const RestaurantDetail = () => {
                   height: floorPlans[0].canvasHeight ?? 700,
                 },
                 menuHighlights: highlights,
+                menuItems: menuItemsForDisplay,
               },
             }));
           } else {
@@ -352,6 +375,7 @@ const RestaurantDetail = () => {
                 layouts: {},
                 canvasSize: { width: 1200, height: 700 },
                 menuHighlights: highlights,
+                menuItems: menuItemsForDisplay,
               },
             }));
           }
@@ -386,10 +410,19 @@ const RestaurantDetail = () => {
   useEffect(() => {
     if (!isReservationOpen || !reservationBranchId || !reservationDate || step !== 'slot') return;
 
+    // Clear previous slots while loading new ones
+    setSlots([]);
+
     // Fetch available time slots from API based on branch, date, and party size
     const slotUrl = `/reservations/available-slots?branchId=${reservationBranchId}&reservationDate=${reservationDate}&partySize=${guestCount}`;
-    console.log("📅 Fetching time slots:", { url: slotUrl, branchId: reservationBranchId, date: reservationDate, partySize: guestCount });
-    
+    console.log("📅 Fetching time slots for date:", { 
+      url: slotUrl, 
+      branchId: reservationBranchId, 
+      date: reservationDate, 
+      partySize: guestCount,
+      timestamp: new Date().toISOString()
+    });
+
     getJson<any>(slotUrl)
       .then((response) => {
         console.log("⏰ Time slots received:", response.data);
@@ -399,13 +432,25 @@ const RestaurantDetail = () => {
             label: slot.label,
             status: slot.status
           }));
-          console.log("✅ Time slots set:", slotsData);
+          console.log(`✅ Updated slots for ${reservationDate}:`, slotsData);
           setSlots(slotsData);
+        } else {
+          console.warn("⚠️ No slots data in response, using fallback");
+          setSlots([
+            { id: 'slot-1', label: '11:00 AM', status: 'Available' as const },
+            { id: 'slot-2', label: '11:30 AM', status: 'Available' as const },
+            { id: 'slot-3', label: '12:00 PM', status: 'Available' as const },
+            { id: 'slot-4', label: '12:30 PM', status: 'Limited' as const },
+            { id: 'slot-5', label: '06:00 PM', status: 'Available' as const },
+            { id: 'slot-6', label: '06:30 PM', status: 'Available' as const },
+            { id: 'slot-7', label: '07:00 PM', status: 'Limited' as const },
+            { id: 'slot-8', label: '07:30 PM', status: 'Available' as const },
+          ]);
         }
       })
       .catch((error) => {
         // Fallback to hardcoded slots if API fails
-        console.warn("❌ Failed to fetch time slots, using fallback:", error);
+        console.error(`❌ Failed to fetch time slots for ${reservationDate}:`, error);
         setSlots([
           { id: 'slot-1', label: '11:00 AM', status: 'Available' as const },
           { id: 'slot-2', label: '11:30 AM', status: 'Available' as const },
@@ -711,9 +756,9 @@ const RestaurantDetail = () => {
               const branchData = branchFloors[branchId];
               const branchInfo = branchesInfo[branchId];
               if (!branchData) return null;
-              
+
               const branchName = branchInfo?.name || `Branch`;
-              
+
               return (
                 <div key={branchId} className="space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                   <div className="mb-6">
@@ -760,6 +805,16 @@ const RestaurantDetail = () => {
 
                   {branchData.menuHighlights && branchData.menuHighlights.length > 0 && (
                     <MenuHighlightsCard items={branchData.menuHighlights} />
+                  )}
+
+                  {branchData.menuItems && branchData.menuItems.length > 0 && (
+                    <FullMenuCard items={branchData.menuItems} />
+                  )}
+                  
+                  {(!branchData.menuItems || branchData.menuItems.length === 0) && (!branchData.menuHighlights || branchData.menuHighlights.length === 0) && (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                      No menu items available for this branch.
+                    </div>
                   )}
 
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">

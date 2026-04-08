@@ -10,6 +10,7 @@ export type BranchGoLiveStatus = {
   tablesConfiguredDone: boolean;
   reservationPolicyDone: boolean;
   turnTimesDone: boolean;
+  staffSetupDone: boolean;
   completionPercentage: number;
   isReady: boolean;
   createdAt: string;
@@ -60,7 +61,7 @@ export const GoLiveProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [goLiveStatus, setGoLiveStatus] = useState<GoLiveStatus | null>(null);
   const [isLoadingGoLive, setIsLoadingGoLive] = useState(true);
 
-  const fetchGoLiveStatus = async () => {
+  const fetchGoLiveStatus = React.useCallback(async () => {
     const restaurantId = getStoredRestaurantId();
     if (!restaurantId) {
       setIsLoadingGoLive(false);
@@ -77,7 +78,7 @@ export const GoLiveProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } finally {
       setIsLoadingGoLive(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void fetchGoLiveStatus();

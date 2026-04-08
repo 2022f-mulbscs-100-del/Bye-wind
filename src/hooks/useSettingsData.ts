@@ -341,87 +341,94 @@ export function useSettingsData() {
     fetchData();
   }, [fetchData]);
 
-  const saveSettings = async (tab: 'ops' | 'integrations' | 'compliance') => {
+  const saveSettings = async (tab: 'ops' | 'integrations' | 'compliance', subTab?: 'hours' | 'policy' | 'turnTimes') => {
+    console.log(`[saveSettings] Starting save: tab=${tab}, subTab=${subTab}, selectedBranchId=${selectedBranchId}`);
     const toastId = toast.loading("Saving settings...");
     try {
       if (tab === "ops") {
         if (!selectedBranchId) throw new Error("Please select a branch.");
         
         // Save business hours
-        await putJson("/business-hours/bulk", {
-          branchId: selectedBranchId,
-          schedule: settings.ops.businessHours.map(h => ({
-            dayOfWeek: h.day.toUpperCase() === "SUN" ? "SUNDAY" : 
-                       h.day.toUpperCase() === "MON" ? "MONDAY" :
-                       h.day.toUpperCase() === "TUE" ? "TUESDAY" :
-                       h.day.toUpperCase() === "WED" ? "WEDNESDAY" :
-                       h.day.toUpperCase() === "THU" ? "THURSDAY" :
-                       h.day.toUpperCase() === "FRI" ? "FRIDAY" : "SATURDAY",
-            openTime: h.open,
-            closeTime: h.close,
-            isOpen: !h.closed,
-            shifts: []
-          }))
-        });
-
-        // Save reservation policy
-        if (settings.reservationPolicy.id) {
-          await putJson(`/reservation-policies/${settings.reservationPolicy.id}`, settings.reservationPolicy);
-        } else {
-          await postJson("/reservation-policies", {
-            branchId: selectedBranchId,
-            ...settings.reservationPolicy
-          });
-        }
-
-        // Fetch existing turn time rules to find default
-        const existingRulesRes = await getJson<TurnTimeResponse[]>(`/turn-times?branchId=${selectedBranchId}`);
-        const existingRules = existingRulesRes.data || [];
-        const defaultRule = existingRules.find((t: TurnTimeResponse) => t.isDefault);
-
-        // Save or update default turn time rule
-        if (defaultRule) {
-          await putJson(`/turn-times/${defaultRule.id}`, {
-            durationMins: settings.turnTime.defaultDuration,
-            isDefault: true
-          });
-        } else {
-          await postJson("/turn-times", {
-            branchId: selectedBranchId,
-            partySizeMin: 1,
-            partySizeMax: 100,
-            durationMins: settings.turnTime.defaultDuration,
-            isDefault: true
-          });
-        }
-
-        // Save custom turn time rules
-        const rulePromises = settings.turnTime.rules.map(r => {
-          // Validate partySize format
-          const parts = r.partySize.split('-').map(s => Number(s.trim()));
-          if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) {
-            throw new Error(`Invalid party size format: "${r.partySize}". Expected format: "min-max" (e.g., "6-8")`);
-          }
-          
-          const [min, max] = parts;
-          if (min <= 0 || max <= 0 || min > max) {
-            throw new Error(`Invalid party size range: min=${min}, max=${max}. Both must be positive and min must be <= max`);
-          }
-
+        if (!subTab || subTab === "hours") {
+          console.log(`[saveSettings] Saving business hours for branch: ${selectedBranchId}`);
           const payload = {
             branchId: selectedBranchId,
-            partySizeMin: min,
-            partySizeMax: max,
-            durationMins: r.duration,
-            isDefault: false
+            schedule: settings.ops.businessHours.map(h => ({
+              dayOfWeek: h.day, // h.day is already "MONDAY", "TUESDAY", etc. - use it directly
+              openTime: h.open,
+              closeTime: h.close,
+              isOpen: !h.closed,
+              shifts: []
+            }))
           };
-          
-          return r.id 
-            ? putJson(`/turn-times/${r.id}`, payload)
-            : postJson("/turn-times", payload);
-        });
+          console.log(`[saveSettings] Payload:`, payload);
+          await putJson("/business-hours/bulk", payload);
+          console.log(`[saveSettings] Business hours saved successfully`);
+        }
 
-        await Promise.all(rulePromises);
+        // Save reservation policy
+        if (!subTab || subTab === "policy") {
+          if (settings.reservationPolicy.id) {
+            await putJson(`/reservation-policies/${settings.reservationPolicy.id}`, settings.reservationPolicy);
+          } else {
+            await postJson("/reservation-policies", {
+              branchId: selectedBranchId,
+              ...settings.reservationPolicy
+            });
+          }
+        }
+
+        // Save turn times
+        if (!subTab || subTab === "turnTimes") {
+          // Fetch existing turn time rules to find default
+          const existingRulesRes = await getJson<TurnTimeResponse[]>(`/turn-times?branchId=${selectedBranchId}`);
+          const existingRules = existingRulesRes.data || [];
+          const defaultRule = existingRules.find((t: TurnTimeResponse) => t.isDefault);
+
+          // Save or update default turn time rule
+          if (defaultRule) {
+            await putJson(`/turn-times/${defaultRule.id}`, {
+              durationMins: settings.turnTime.defaultDuration,
+              isDefault: true
+            });
+          } else {
+            await postJson("/turn-times", {
+              branchId: selectedBranchId,
+              partySizeMin: 1,
+              partySizeMax: 100,
+              durationMins: settings.turnTime.defaultDuration,
+              isDefault: true
+            });
+          }
+
+          // Save custom turn time rules
+          const rulePromises = settings.turnTime.rules.map(r => {
+            // Validate partySize format
+            const parts = r.partySize.split('-').map(s => Number(s.trim()));
+            if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) {
+              throw new Error(`Invalid party size format: "${r.partySize}". Expected format: "min-max" (e.g., "6-8")`);
+            }
+            
+            const [min, max] = parts;
+            if (min <= 0 || max <= 0 || min > max) {
+              throw new Error(`Invalid party size range: min=${min}, max=${max}. Both must be positive and min must be <= max`);
+            }
+
+            const payload = {
+              branchId: selectedBranchId,
+              partySizeMin: min,
+              partySizeMax: max,
+              durationMins: r.duration,
+              isDefault: false
+            };
+            
+            return r.id 
+              ? putJson(`/turn-times/${r.id}`, payload)
+              : postJson("/turn-times", payload);
+          });
+
+          await Promise.all(rulePromises);
+        }
 
       } else if (tab === "integrations") {
         await Promise.all([
@@ -447,10 +454,13 @@ export function useSettingsData() {
 
       await refreshGoLiveStatus();
       setBaselineSnapshot(snapshot);
+      console.log(`[saveSettings] Success! Saved to baseline snapshot`);
       toast.success("Settings saved successfully!", { id: toastId });
       return true;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to save settings.";
+      console.error(`[saveSettings] Error:`, error);
+      console.error(`[saveSettings] Error message:`, errorMessage);
       toast.error(errorMessage, { id: toastId });
       return false;
     }

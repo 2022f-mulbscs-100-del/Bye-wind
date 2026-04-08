@@ -1,6 +1,19 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FiArrowRight, FiMail, FiUser } from "react-icons/fi";
+import { postJson } from "@/lib/api";
+import { persistAuthSession, type StaffSummary } from "@/lib/auth";
+
+interface SignupResponse {
+  user: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    role: string;
+  };
+  token: string;
+}
 
 const Signup = () => {
   const navigate = useNavigate();
@@ -8,6 +21,7 @@ const Signup = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const validate = () => {
     if (!fullName.trim() || !email.trim() || !password.trim()) {
@@ -15,11 +29,11 @@ const Signup = () => {
     }
     const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
     if (!emailOk) return "Enter a valid email address.";
-    if (password.length < 6) return "Password must be at least 6 characters.";
+    if (password.length < 8) return "Password must be at least 8 characters.";
     return "";
   };
 
-  const handleSignup = (event: FormEvent<HTMLFormElement>) => {
+  const handleSignup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextError = validate();
     if (nextError) {
@@ -27,22 +41,42 @@ const Signup = () => {
       return;
     }
 
-    localStorage.setItem(
-      "auth_user",
-      JSON.stringify({
-        name: fullName.trim(),
-        email: email.trim(),
-        password,
-        role: "user",
-      })
-    );
-    localStorage.setItem("isAuthenticated", "true");
-    localStorage.setItem("auth_email", email.trim());
-    localStorage.setItem("auth_role", "user");
-    localStorage.setItem("auth_name", fullName.trim());
+    setLoading(true);
     setError("");
-    navigate("/guest-profile");
+
+    try {
+      // Split full name into firstName and lastName
+      const nameParts = fullName.trim().split(/\s+/);
+      const firstName = nameParts[0];
+      const lastName = nameParts.slice(1).join(" ") || firstName;
+
+      const response = await postJson<SignupResponse>(
+        "/auth/signup",
+        {
+          firstName,
+          lastName,
+          email: email.trim(),
+          password,
+        }
+      );
+
+      if (!response.data) {
+        throw new Error("Unexpected response from server");
+      }
+
+      // Store user and token using the helper and navigate
+      const { user, token } = response.data;
+      persistAuthSession(token, user as StaffSummary);
+
+      // Navigate to restaurants page
+      navigate("/restaurants");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Signup failed";
+      setError(message);
+      setLoading(false);
+    }
   };
+
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
       <div className="w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-lg">
@@ -107,10 +141,11 @@ const Signup = () => {
 
             <button
               type="submit"
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+              disabled={loading}
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Create account
-              <FiArrowRight />
+              {loading ? "Creating account..." : "Create account"}
+              {!loading && <FiArrowRight />}
             </button>
 
             <p className="mt-6 text-center text-sm text-slate-500">

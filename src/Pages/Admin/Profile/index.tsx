@@ -49,7 +49,7 @@ const Profile = () => {
     let mounted = true;
     const fetchProfile = async () => {
       try {
-        const response = await getJson<ProfileData>(`/staff/${userId}`, {
+        const response = await getJson<ProfileData>("/auth/me", {
           headers: restaurantId ? { "x-restaurant-id": restaurantId } : undefined,
         });
         if (mounted) {
@@ -93,7 +93,7 @@ const Profile = () => {
     const toastId = toast.loading("Saving changes...");
     try {
       const response = await putJson<ProfileData>(
-        `/staff/${userId}`,
+        "/auth/me",
         {
           firstName: draft.firstName,
           lastName: draft.lastName,

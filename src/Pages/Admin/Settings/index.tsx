@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { useSettingsData } from "@/hooks/useSettingsData";
 import Loader from "@/Components/loader";
-import { 
-  FiZap, FiMessageSquare, FiSmartphone, 
-  FiGlobe, FiMail, FiSave, FiShield 
+import {
+  FiZap, FiMessageSquare, FiSmartphone,
+  FiGlobe, FiMail, FiSave, FiShield
 } from "react-icons/fi";
 import { getJson } from "@/lib/api";
 import { getStoredRestaurantId } from "@/lib/auth";
+import { useBranchContext } from "@/context/BranchContext";
 
 type AuditLogEntry = {
   id: string;
@@ -34,11 +35,17 @@ const formatRelativeTime = (value: string) => {
 };
 
 export default function RestaurantSettings() {
+  const { setSelectedBranchId } = useBranchContext();
   const { settings, setSettings, isLoading, hasChanges, saveSettings, resetSettings, selectedBranchId } = useSettingsData();
   const [activeTab, setActiveTab] = useState<"integrations" | "branding" | "audit">("integrations");
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const restaurantId = getStoredRestaurantId();
+
+  useEffect(() => {
+    // Auto-switch to Master Level (All Branches) when entering settings
+    setSelectedBranchId(null);
+  }, [setSelectedBranchId]);
 
   useEffect(() => {
     if (activeTab !== "audit" || !restaurantId) return;
@@ -74,11 +81,10 @@ export default function RestaurantSettings() {
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`rounded-xl px-5 py-2.5 text-xs font-bold transition-all uppercase tracking-wider ${
-              activeTab === tab 
-                ? "bg-slate-900 text-white shadow-md shadow-slate-200" 
+            className={`rounded-xl px-5 py-2.5 text-xs font-bold transition-all uppercase tracking-wider ${activeTab === tab
+                ? "bg-slate-900 text-white shadow-md shadow-slate-200"
                 : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300"
-            }`}
+              }`}
           >
             {tab}
           </button>
@@ -126,7 +132,7 @@ export default function RestaurantSettings() {
                   <div key={key} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                         <Icon size={12}/> {label} Key
+                        <Icon size={12} /> {label} Key
                       </label>
                       <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100 focus-within:bg-white focus-within:border-indigo-200 transition-all">
                         <input
@@ -141,7 +147,7 @@ export default function RestaurantSettings() {
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                         Sender ID
+                        Sender ID
                       </label>
                       <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100 focus-within:bg-white focus-within:border-indigo-200 transition-all">
                         <input
@@ -158,7 +164,7 @@ export default function RestaurantSettings() {
                 ))}
               </div>
             </div>
-            
+
             <div className="rounded-2xl bg-blue-50 border border-blue-100 p-6 text-sm text-blue-800 flex items-start gap-3">
               <FiZap className="shrink-0 mt-0.5" />
               <div>
@@ -183,9 +189,9 @@ export default function RestaurantSettings() {
                     Reset
                   </button>
                   <button
-                   onClick={() => saveSettings("compliance")}
-                   disabled={!hasChanges}
-                   className="rounded-xl bg-slate-900 px-4 py-1.5 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-30 shadow-lg shadow-slate-100 transition-all flex items-center gap-2"
+                    onClick={() => saveSettings("compliance")}
+                    disabled={!hasChanges}
+                    className="rounded-xl bg-slate-900 px-4 py-1.5 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-30 shadow-lg shadow-slate-100 transition-all flex items-center gap-2"
                   >
                     <FiSave size={14} /> Update Theme
                   </button>
@@ -237,7 +243,7 @@ export default function RestaurantSettings() {
               <h3 className="font-bold text-slate-900">Activity Audit Stream</h3>
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Last 10 Actions</div>
             </div>
-            
+
             {loadingLogs ? (
               <div className="flex justify-center py-12"><Loader size={30} /></div>
             ) : logs.length === 0 ? (

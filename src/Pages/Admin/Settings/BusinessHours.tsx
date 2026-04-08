@@ -19,6 +19,7 @@ export default function BusinessHours() {
   } = useSettingsData();
   const [holidayDraft, setHolidayDraft] = useState({ name: "", startDate: "" });
   const [editingHolidayId, setEditingHolidayId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   if (isLoading) return <div className="flex h-64 items-center justify-center"><Loader size={40} /></div>;
 
@@ -34,6 +35,15 @@ export default function BusinessHours() {
   const resetHolidayForm = () => {
     setHolidayDraft({ name: "", startDate: "" });
     setEditingHolidayId(null);
+  };
+
+  const handleSaveSchedule = async () => {
+    setIsSaving(true);
+    try {
+      await saveSettings("ops", "hours");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleHolidaySubmit = async () => {
@@ -85,17 +95,26 @@ export default function BusinessHours() {
         <div className="mt-6 flex flex-wrap items-center gap-2">
           <button
             onClick={resetSettings}
-            disabled={!hasChanges}
+            disabled={!hasChanges || isSaving}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-30"
           >
             <FiRotateCcw /> Reset Changes
           </button>
           <button
-            onClick={() => saveSettings("ops")}
-            disabled={!hasChanges}
+            onClick={handleSaveSchedule}
+            disabled={!hasChanges || isSaving}
             className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-30"
           >
-            <FiSave /> Update Schedule
+            {isSaving ? (
+              <>
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-white"></div>
+                Saving...
+              </>
+            ) : (
+              <>
+                <FiSave /> Update Schedule
+              </>
+            )}
           </button>
         </div>
       </section>

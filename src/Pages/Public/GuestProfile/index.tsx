@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import PublicNavbar from "../../../Components/Public/PublicNavbar";
 import Loader from "../../../Components/loader";
 import type { GuestProfileData } from "./types";
@@ -9,6 +10,8 @@ import RecentVisits from "./RecentVisits";
 import SavedRestaurants from "./SavedRestaurants";
 import Preferences from "./Preferences";
 import BookingDetailsModal from "./BookingDetailsModal";
+import { getJson } from "@/lib/api";
+import { getStoredUser } from "@/lib/auth";
 
 const defaultGuestProfile: GuestProfileData = {
   profile: {
@@ -27,6 +30,11 @@ const defaultGuestProfile: GuestProfileData = {
       time: "7:30 PM",
       guests: 4,
       status: "confirmed",
+      table: "Table 12",
+      paymentStatus: "paid",
+      paymentMethod: "Credit Card",
+      amount: 86,
+      reference: "BN-RES-29831"
     },
     {
       id: "2",
@@ -35,6 +43,11 @@ const defaultGuestProfile: GuestProfileData = {
       time: "6:00 PM",
       guests: 2,
       status: "confirmed",
+      table: "Table 5",
+      paymentStatus: "pay_later",
+      paymentMethod: "Pay at restaurant",
+      amount: 54,
+      reference: "BN-RES-29851"
     },
     {
       id: "3",
@@ -43,11 +56,17 @@ const defaultGuestProfile: GuestProfileData = {
       time: "8:00 PM",
       guests: 6,
       status: "pending",
+      table: "Table 8",
+      paymentStatus: "pending",
+      paymentMethod: "N/A",
+      amount: 120,
+      reference: "BN-RES-29871"
     },
   ],
   savedRestaurants: [
     {
       id: "1",
+      restaurantId: "res-1",
       name: "Marina Harbor",
       cuisine: "Seafood",
       rating: 4.8,
@@ -55,6 +74,7 @@ const defaultGuestProfile: GuestProfileData = {
     },
     {
       id: "2",
+      restaurantId: "res-2",
       name: "ByeWind Downtown",
       cuisine: "Modern American",
       rating: 4.6,
@@ -62,6 +82,7 @@ const defaultGuestProfile: GuestProfileData = {
     },
     {
       id: "3",
+      restaurantId: "res-3",
       name: "Uptown Garden",
       cuisine: "Italian",
       rating: 4.7,
@@ -69,6 +90,7 @@ const defaultGuestProfile: GuestProfileData = {
     },
     {
       id: "4",
+      restaurantId: "res-4",
       name: "Sakura Sushi Bar",
       cuisine: "Japanese",
       rating: 4.9,
@@ -98,30 +120,41 @@ const defaultGuestProfile: GuestProfileData = {
 };
 
 const GuestProfile = () => {
+  const navigate = useNavigate();
   const [data, setData] = useState<GuestProfileData>(defaultGuestProfile);
   const [loading, setLoading] = useState(true);
   const [selectedBooking, setSelectedBooking] = useState<GuestProfileData["upcomingBookings"][number] | null>(null);
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  
+  const user = getStoredUser();
   const [draftProfile, setDraftProfile] = useState({
-    name: defaultGuestProfile.profile.name,
-    email: defaultGuestProfile.profile.email,
-    phone: defaultGuestProfile.profile.phone,
+    name: user?.name || defaultGuestProfile.profile.name,
+    email: user?.email || defaultGuestProfile.profile.email,
+    phone: (user as any)?.phone || defaultGuestProfile.profile.phone,
     location: defaultGuestProfile.profile.location,
   });
 
   useEffect(() => {
+    if (!user?.email) {
+      navigate("/login");
+      return;
+    }
+
     let mounted = true;
     setLoading(true);
-    fetch("/DummyApis/guest-profile.json")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (mounted && json) {
+
+    const fetchProfile = async () => {
+      try {
+        const response = await getJson<any>(`/guests/profile?email=${user.email}`);
+        if (mounted && response.data) {
+          const json = response.data;
           const override = localStorage.getItem("guest_profile_override");
           const parsedOverride = override ? JSON.parse(override) : null;
           const nextProfile = parsedOverride
             ? { ...json.profile, ...parsedOverride }
             : json.profile;
+            
           setData({ ...json, profile: nextProfile });
           setDraftProfile({
             name: nextProfile.name,
@@ -130,31 +163,40 @@ const GuestProfile = () => {
             location: nextProfile.location,
           });
         }
-      })
-      .catch(() => null)
-      .finally(() => {
+      } catch (error) {
+        console.error("Failed to fetch guest profile:", error);
+      } finally {
         if (mounted) setLoading(false);
-      });
+      }
+    };
+
+    fetchProfile();
 
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [user?.email, navigate]);
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return dateString;
+      
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
 
-    if (date.toDateString() === today.toDateString()) return "Today";
-    if (date.toDateString() === tomorrow.toDateString()) return "Tomorrow";
-    
-    return date.toLocaleDateString("en-US", { 
-      weekday: "short", 
-      month: "short", 
-      day: "numeric" 
-    });
+      if (date.toDateString() === today.toDateString()) return "Today";
+      if (date.toDateString() === tomorrow.toDateString()) return "Tomorrow";
+      
+      return date.toLocaleDateString("en-US", { 
+        weekday: "short", 
+        month: "short", 
+        day: "numeric" 
+      });
+    } catch {
+      return dateString;
+    }
   };
 
   if (loading) {
@@ -212,14 +254,14 @@ const GuestProfile = () => {
             />
 
             {/* Recent Visits */}
-            <RecentVisits visits={data.recentVisits} />
+            <RecentVisits visits={data.recentVisits || []} />
           </div>
 
           {/* Right Column */}
           <div className="space-y-6">
             
             {/* Saved Restaurants */}
-            <SavedRestaurants restaurants={data.savedRestaurants} />
+            <SavedRestaurants restaurants={data.savedRestaurants || []} />
 
             {/* Dining Preferences */}
             <Preferences preferences={data.preferences} />

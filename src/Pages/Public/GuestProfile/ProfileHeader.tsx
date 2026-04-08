@@ -56,7 +56,15 @@ const ProfileHeader = ({
               <div className="text-2xl font-semibold text-slate-900">{profile.name}</div>
             )}
             <div className="text-sm text-slate-500">
-              Member since {profile.memberSince}
+              Member since {(() => {
+                try {
+                  const date = new Date(profile.memberSince);
+                  if (isNaN(date.getTime())) return profile.memberSince;
+                  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+                } catch {
+                  return profile.memberSince;
+                }
+              })()}
             </div>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useGoLiveContext } from "@/context/GoLiveContext";
 import {
   FiAlertTriangle,
   FiEdit2,
@@ -13,7 +14,7 @@ import Loader from "@/Components/loader";
 import { deleteJson, getJson, postJson, putJson } from "@/lib/api";
 import { getStoredRestaurantId, isSessionActive } from "@/lib/auth";
 import type { BackendPaymentGateway, PaymentGatewayView } from "@/lib/adapters/payment";
-import { FALLBACK_PAYMENT_GATEWAYS, mapPaymentGatewayToView } from "@/lib/adapters/payment";
+import { mapPaymentGatewayToView } from "@/lib/adapters/payment";
 
 type GatewayFormData = {
   id?: string;
@@ -33,6 +34,7 @@ const Payment = () => {
   const [gatewayError, setGatewayError] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { refreshGoLiveStatus } = useGoLiveContext();
   const [formData, setFormData] = useState<GatewayFormData>({
     provider: "STRIPE",
     currency: "USD",
@@ -57,11 +59,11 @@ const Payment = () => {
       const response = await getJson<BackendPaymentGateway[]>("/payment-gateways", {
         headers: restaurantId ? { "x-restaurant-id": restaurantId } : undefined,
       });
-      const payload = response.data.length ? response.data : FALLBACK_PAYMENT_GATEWAYS;
+      const payload = response.data.length ? response.data : [];
       setGateways(payload.map(mapPaymentGatewayToView));
       setGatewayError("");
     } catch (err) {
-      setGateways(FALLBACK_PAYMENT_GATEWAYS.map(mapPaymentGatewayToView));
+      setGateways([]);
       setGatewayError("Unable to fetch payment gateway data.");
       console.error(err);
     } finally {
@@ -109,6 +111,7 @@ const Payment = () => {
         headers: restaurantId ? { "x-restaurant-id": restaurantId } : undefined,
       });
       setGateways((prev) => prev.filter((g) => g.id !== id));
+      refreshGoLiveStatus(); // Refresh onboarding status
       toast.success("Gateway removed.", { id: toastId });
     } catch (err: any) {
       toast.error(err.message || "Failed to delete gateway.", { id: toastId });
@@ -137,6 +140,7 @@ const Payment = () => {
 
       setIsModalOpen(false);
       loadGateways();
+      refreshGoLiveStatus(); // Refresh onboarding status
       toast.success("Gateway configuration saved!", { id: toastId });
     } catch (err: any) {
       toast.error(err.message || "Failed to save gateway configuration.", { id: toastId });
@@ -147,8 +151,8 @@ const Payment = () => {
   };
 
   const gatewayStats = useMemo(() => {
-    const total = gateways.length || FALLBACK_PAYMENT_GATEWAYS.length;
-    const activeGateways = gateways.length ? gateways : FALLBACK_PAYMENT_GATEWAYS.map(mapPaymentGatewayToView);
+    const total = gateways.length;
+    const activeGateways = gateways;
     const active = activeGateways.filter((gateway) => gateway.status === "Active").length;
     const testMode = activeGateways.filter((gateway) => gateway.isTestMode).length;
     const currencies = new Set(activeGateways.map((gateway) => gateway.currency)).size;

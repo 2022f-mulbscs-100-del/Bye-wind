@@ -112,7 +112,7 @@ export default function TurnTimes() {
             <FiRotateCcw /> Reset
           </button>
           <button
-            onClick={() => saveSettings("ops")}
+            onClick={() => saveSettings("ops", "turnTimes")}
             disabled={!hasChanges}
             className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition-all"
           >

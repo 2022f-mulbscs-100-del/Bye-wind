@@ -35,7 +35,7 @@ const OnboardingGuard = () => {
     return <Navigate to="/dashboard/onboarding" replace />;
   }
 
-  return <Outlet />;
+  return <Outlet key={selectedBranchId || "master"} />;
 };
 
 export default OnboardingGuard;

@@ -23,7 +23,7 @@ const CtaSection = () => {
             Start free
           </Link>
           <Link
-            to="/become-seller"
+            to="/register-restaurant"
             className="rounded-full border border-white/30 px-6 py-3 text-sm font-semibold text-white"
           >
             Become a seller

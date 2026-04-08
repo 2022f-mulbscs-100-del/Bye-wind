@@ -1,10 +1,10 @@
+import { useEffect, useState } from "react";
 import {
   FiArrowUpRight,
   FiClock,
   FiExternalLink,
   FiFileText,
   FiPlus,
-  FiTrendingDown,
   FiTrendingUp,
   FiUsers,
 } from "react-icons/fi";
@@ -24,6 +24,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { getJson } from "@/lib/api";
+import { useBranchContext } from "@/context/BranchContext";
+import { getStoredRestaurantId } from "@/lib/auth";
 
 const trafficData = [
   { month: "Jan", value: 40 },
@@ -35,7 +38,7 @@ const trafficData = [
   { month: "Jul", value: 71 },
 ];
 
-const reservations = [
+const reservationsTable = [
   {
     name: "Maya Carter",
     time: "Today, 7:30 PM",
@@ -69,7 +72,37 @@ const quickLinks = [
   { label: "Open Reports", icon: FiExternalLink },
 ];
 
+type DashboardStats = {
+  staffCount: number;
+  menuCount: number;
+  reservationCount: number;
+  totalCapacity: number;
+};
+
 const Dashboard = () => {
+  const { selectedBranchId } = useBranchContext();
+  const restaurantId = getStoredRestaurantId();
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      setLoading(true);
+      try {
+        const query = selectedBranchId 
+          ? `?branchId=${selectedBranchId}` 
+          : `?restaurantId=${restaurantId}`;
+        const res = await getJson<DashboardStats>(`/stats/dashboard${query}`);
+        setStats(res.data);
+      } catch (err) {
+        console.error("Failed to fetch dashboard stats", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStats();
+  }, [selectedBranchId, restaurantId]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -90,33 +123,33 @@ const Dashboard = () => {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatsCard
-          title="Views"
-          value="7,265"
-          change="+11.01%"
+          title="Reservations"
+          value={loading ? "..." : stats?.reservationCount?.toString() || "0"}
+          change="Today"
           trend="up"
           tone="blue"
-          icon={<FiTrendingUp />}
+          icon={<FiClock />}
         />
         <StatsCard
-          title="Visits"
-          value="3,671"
-          change="-0.03%"
-          trend="down"
-          tone="violet"
-          icon={<FiTrendingDown />}
-        />
-        <StatsCard
-          title="New Users"
-          value="256"
-          change="+15.03%"
+          title="Staff Members"
+          value={loading ? "..." : stats?.staffCount?.toString() || "0"}
+          change="Active"
           trend="up"
-          tone="sky"
+          tone="violet"
           icon={<FiUsers />}
         />
         <StatsCard
-          title="Active Users"
-          value="2,318"
-          change="+6.08%"
+          title="Menu Items"
+          value={loading ? "..." : stats?.menuCount?.toString() || "0"}
+          change="Total items"
+          trend="up"
+          tone="sky"
+          icon={<FiFileText />}
+        />
+        <StatsCard
+          title="Seating Capacity"
+          value={loading ? "..." : stats?.totalCapacity?.toString() || "0"}
+          change="Total seats"
           trend="up"
           tone="indigo"
           icon={<FiTrendingUp />}
@@ -222,7 +255,7 @@ const Dashboard = () => {
                 </tr>
               </thead>
               <tbody className="text-slate-600">
-                {reservations.map((row) => (
+                {reservationsTable.map((row) => (
                   <tr key={row.name} className="border-t border-slate-100">
                     <td className="py-3 font-medium text-slate-900">{row.name}</td>
                     <td className="py-3">{row.time}</td>

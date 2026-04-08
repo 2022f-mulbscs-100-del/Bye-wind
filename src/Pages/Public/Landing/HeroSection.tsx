@@ -31,7 +31,7 @@ const HeroSection = () => {
               Browse restaurants
             </Link>
             <Link
-              to="/become-seller"
+              to="/register-restaurant"
               className="rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-600"
             >
               Become a seller

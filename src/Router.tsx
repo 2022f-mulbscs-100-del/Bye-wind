@@ -23,6 +23,7 @@ const Marketing = lazy(() => import("./Pages/Admin/Marketing/index"));
 const Profile = lazy(() => import("./Pages/Admin/Profile/index"));
 const Login = lazy(() => import("./Pages/Auth/Login"));
 const Signup = lazy(() => import("./Pages/Auth/Signup"));
+const RegisterRestaurant = lazy(() => import("./Pages/Auth/RegisterRestaurant"));
 const BecomeSeller = lazy(() => import("./Pages/Auth/BecomeSeller"));
 const ForgotPassword = lazy(() => import("./Pages/Auth/ForgotPassword"));
 const Landing = lazy(() => import("./Pages/Public/Landing"));
@@ -52,7 +53,7 @@ export const Router = createBrowserRouter([
   },
   {
     path: "/dashboard",
-    element: <ProtectedRoute allow={["admin"]} />,
+    element: <ProtectedRoute allow={["admin", "owner", "staff", "manager"]} />,
     children: [
       {
         element: <Layout />,
@@ -201,6 +202,10 @@ export const Router = createBrowserRouter([
     element: <Signup />,
   },
   {
+    path: "/register-restaurant",
+    element: <RegisterRestaurant />,
+  },
+  {
     path: "/become-seller",
     element: <BecomeSeller />,
   },
@@ -237,7 +242,7 @@ export const Router = createBrowserRouter([
     element: <ProtectedRoute allow={["user"]} />,
     children: [
       {
-        path: "/guest-profile",
+        index: true,
         element: <GuestProfile />,
       },
     ],

@@ -1,8 +1,9 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { getStoredRole, isSessionActive } from "@/lib/auth";
+import type { BrowserRole } from "@/lib/auth";
 
 type ProtectedRouteProps = {
-  allow: Array<"admin" | "super-admin" | "user">;
+  allow: Array<BrowserRole | "super-admin">;
   redirectTo?: string;
 };
 

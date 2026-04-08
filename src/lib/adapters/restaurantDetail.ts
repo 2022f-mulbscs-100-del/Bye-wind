@@ -26,10 +26,10 @@ export type BackendRestaurantDetail = BackendRestaurant & {
       images?: string[];
     }>;
     businessHours?: Array<{
-      id: string;
-      day: string;
-      openTime: string;
-      closeTime: string;
+      dayOfWeek?: string;
+      openTime?: string;
+      closeTime?: string;
+      isOpen?: boolean;
     }>;
     floorPlans?: Array<{
       id: string;
@@ -66,6 +66,56 @@ const formatPhone = (restaurant: BackendRestaurantDetail) => {
   );
 };
 
+const formatBusinessHours = (restaurant: BackendRestaurantDetail, selectedBranchId?: string): string => {
+  // Try to get business hours from a specific branch (if provided) or the first branch
+  if (!restaurant.branchesDetail || restaurant.branchesDetail.length === 0) {
+    return "00:00 - 00:00";
+  }
+
+  // Find the branch - either the selected one or the first one
+  let targetBranch = selectedBranchId
+    ? restaurant.branchesDetail.find((b) => b.id === selectedBranchId)
+    : restaurant.branchesDetail[0];
+  
+  if (!targetBranch) {
+    // If specific branch not found, fallback to first branch
+    targetBranch = restaurant.branchesDetail[0];
+  }
+
+  if (!targetBranch.businessHours || targetBranch.businessHours.length === 0) {
+    return "00:00 - 00:00";
+  }
+
+  // Get today's day of week
+  const daysOfWeek = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+  const today = new Date();
+  const todayDayName = daysOfWeek[today.getDay()];
+
+  // Get today's hours
+  const todayHours = targetBranch.businessHours.find(
+    (h) => h.dayOfWeek?.toUpperCase() === todayDayName
+  );
+
+  if (!todayHours) {
+    // If today not found, get the first available open day
+    const firstOpenDay = targetBranch.businessHours.find((h) => h.isOpen !== false);
+    if (!firstOpenDay) {
+      return "Closed";
+    }
+    const openTime = firstOpenDay.openTime || "00:00";
+    const closeTime = firstOpenDay.closeTime || "00:00";
+    return `${openTime} - ${closeTime}`;
+  }
+
+  if (todayHours.isOpen === false) {
+    return "Closed";
+  }
+
+  const openTime = todayHours.openTime || "00:00";
+  const closeTime = todayHours.closeTime || "00:00";
+  return `${openTime} - ${closeTime}`;
+};
+
 const normalizeRating = (restaurant: BackendRestaurantDetail) => {
   const branchCount = restaurant._count?.branches ?? 1;
   return Math.min(5, 3 + branchCount * 0.2);
@@ -83,6 +133,12 @@ export type RestaurantDetailEntry = {
   images?: string[];
   menu?: { name: string; price: string; description: string }[];
   reviews?: { author: string; rating: number; text: string }[];
+  businessHours?: Array<{
+    dayOfWeek?: string;
+    openTime?: string;
+    closeTime?: string;
+    isOpen?: boolean;
+  }>;
   floorHighlights?: { label: string; value: string }[];
   floorTables?: {
     id: string;
@@ -101,8 +157,18 @@ export type RestaurantDetailEntry = {
 
 export const mapDetailRestaurant = (
   restaurant: BackendRestaurantDetail,
-  fallback?: RestaurantDetailEntry
+  fallback?: RestaurantDetailEntry,
+  selectedBranchId?: string
 ): RestaurantDetailEntry => {
+  // Extract business hours from the selected branch or first branch
+  const targetBranch = selectedBranchId
+    ? restaurant.branchesDetail?.find((b) => b.id === selectedBranchId)
+    : restaurant.branchesDetail?.[0];
+  
+  const businessHoursData = 
+    fallback?.businessHours ?? 
+    targetBranch?.businessHours;
+
   return {
     id: restaurant.id,
     name: restaurant.brandName ?? restaurant.legalBusinessName ?? fallback?.name ?? "Restaurant",
@@ -110,12 +176,12 @@ export const mapDetailRestaurant = (
     rating: parseFloat((fallback?.rating ?? normalizeRating(restaurant)).toFixed(1)),
     location: formatLocation(restaurant),
     phone: formatPhone(restaurant),
-    hours: fallback?.hours ?? "08:00 - 23:00",
+    hours: fallback?.hours ?? formatBusinessHours(restaurant, selectedBranchId),
+    businessHours: businessHoursData,
     description:
       fallback?.description ??
       restaurant.description ??
-      `${restaurant.brandName ?? "This restaurant"} is operating ${
-        restaurant.operatingCountry ? `in ${restaurant.operatingCountry}` : "across multiple locations"
+      `${restaurant.brandName ?? "This restaurant"} is operating ${restaurant.operatingCountry ? `in ${restaurant.operatingCountry}` : "across multiple locations"
       }.`,
     images: fallback?.images ?? placeholderImages,
     menu: fallback?.menu ?? [],

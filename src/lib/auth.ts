@@ -9,8 +9,8 @@ const STORAGE_KEYS = {
   userId: "auth_user_id",
 };
 
-export type BackendRole = "SUPER_ADMIN" | "OWNER" | "HOST" | "STAFF";
-export type BrowserRole = "admin" | "super-admin" | "user";
+export type BackendRole = "GUEST" | "OWNER" | "ADMIN" | "STAFF" | "MANAGER";
+export type BrowserRole = "user" | "admin" | "owner" | "staff" | "manager";
 
 export type StaffSummary = {
   id: string;
@@ -22,10 +22,11 @@ export type StaffSummary = {
 };
 
 const roleMap: Record<BackendRole, BrowserRole> = {
-  SUPER_ADMIN: "super-admin",
-  OWNER: "admin",
-  HOST: "admin",
-  STAFF: "admin",
+  GUEST: "user",
+  OWNER: "owner",
+  ADMIN: "admin",
+  STAFF: "staff",
+  MANAGER: "manager",
 };
 
 const getStorage = () => (typeof window === "undefined" ? null : window.localStorage);

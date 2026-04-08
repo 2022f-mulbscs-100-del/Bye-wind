@@ -8,7 +8,7 @@ import { useBranchContext } from "@/context/BranchContext";
 export default function ReviewGoLive({ onBack }: { onBack: () => void }) {
   const restaurantId = getStoredRestaurantId();
   const { goLiveStatus, refreshGoLiveStatus } = useGoLiveContext();
-  const { refreshBranches } = useBranchContext();
+  const { refreshBranches, selectedBranchId } = useBranchContext();
 
   const [isActivating, setIsActivating] = useState(false);
 
@@ -18,7 +18,10 @@ export default function ReviewGoLive({ onBack }: { onBack: () => void }) {
     const toastId = toast.loading("Activating your restaurant...");
 
     try {
-      const response = await postJson<{ message: string }>(`/go-live/${restaurantId}/activate`);
+      const url = selectedBranchId 
+        ? `/go-live/${restaurantId}/activate?branchId=${selectedBranchId}`
+        : `/go-live/${restaurantId}/activate`;
+      const response = await postJson<{ message: string }>(url);
       await Promise.all([
         refreshGoLiveStatus(),
         refreshBranches()
@@ -33,16 +36,22 @@ export default function ReviewGoLive({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const branchStatus = goLiveStatus?.branchStatuses?.find(s => s.branchId === selectedBranchId);
+  const activeChecklist = branchStatus || goLiveStatus;
+
   const checkpoints = [
-    { key: "restaurantProfileDone", label: "Restaurant Profile", isDone: goLiveStatus?.restaurantProfileDone },
     { key: "branchSetupDone", label: "Branch Setup", isDone: goLiveStatus?.branchSetupDone },
-    { key: "businessHoursDone", label: "Business Hours", isDone: goLiveStatus?.businessHoursDone },
-    { key: "tablesConfiguredDone", label: "Floor & Tables", isDone: goLiveStatus?.floorPlanDone || goLiveStatus?.tablesConfiguredDone },
-    { key: "reservationPolicyDone", label: "Reservation Policy", isDone: goLiveStatus?.reservationPolicyDone },
+    { key: "businessHoursDone", label: "Business Hours", isDone: activeChecklist?.businessHoursDone },
+    { key: "tablesConfiguredDone", label: "Floor & Tables", isDone: activeChecklist?.floorPlanDone && activeChecklist?.tablesConfiguredDone },
+    { key: "reservationPolicyDone", label: "Rules & Policy", isDone: activeChecklist?.reservationPolicyDone && activeChecklist?.turnTimesDone },
+    { key: "staffSetupDone", label: "Staff Management", isDone: goLiveStatus?.staffSetupDone },
+    { key: "paymentConfiguredDone", label: "Payment Gateway", isDone: goLiveStatus?.paymentConfiguredDone },
+    { key: "communicationDone", label: "Communications", isDone: goLiveStatus?.communicationDone },
+    { key: "brandingDone", label: "Branding & Theme", isDone: goLiveStatus?.brandingDone },
   ];
 
   const incompleteCount = checkpoints.filter((c) => !c.isDone).length;
-  const canGoLive = incompleteCount === 0 || goLiveStatus?.completionPercentage === 100;
+  const canGoLive = (branchStatus ? branchStatus.completionPercentage === 100 : goLiveStatus?.completionPercentage === 100) || incompleteCount === 0;
 
   return (
     <div className="space-y-6 max-w-2xl">

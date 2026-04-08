@@ -24,7 +24,6 @@ export const AdminBranchLevel: SidebarItem[] = [
   { name: "Reservation", path: "/dashboard/reservation" },
   { name: "Orders", path: "/dashboard/orders" },
   { name: "Guest CRM", path: "/dashboard/guest-crm" },
-  { name: "Payment", path: "/dashboard/payment" },
   { name: "Onboarding", path: "/dashboard/onboarding" },
   { 
     name: "Settings", 

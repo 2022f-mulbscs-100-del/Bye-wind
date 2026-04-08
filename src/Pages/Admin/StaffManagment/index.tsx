@@ -5,8 +5,9 @@ import { FiEdit2, FiEye, FiPlus, FiTrash2 } from "react-icons/fi";
 import { postJson, getJson, putJson } from "@/lib/api";
 import { getStoredRestaurantId, isSessionActive } from "@/lib/auth";
 import { useBranchContext } from "@/context/BranchContext";
+import { useGoLiveContext } from "@/context/GoLiveContext";
 
-type StaffRole = "SUPER_ADMIN" | "OWNER" | "HOST" | "STAFF";
+type StaffRole = "STAFF" | "MANAGER";
 
 type StaffRecord = {
   id: string;
@@ -38,35 +39,13 @@ type StaffForm = StaffDetail & {
   selectedBranchId?: string | null;
 };
 
-const FALLBACK_STAFF: StaffRecord[] = [
-  {
-    id: "s1",
-    firstName: "Ava",
-    lastName: "Collins",
-    email: "ava.collins@byewind.com",
-    staffUsername: "ava.collins",
-    role: "OWNER",
-    phone: "+1 (415) 555-2033",
-    isActive: true,
-  },
-  {
-    id: "s2",
-    firstName: "Liam",
-    lastName: "Patel",
-    email: "liam.patel@byewind.com",
-    staffUsername: "liam.patel",
-    role: "HOST",
-    phone: "+1 (415) 555-8192",
-    isActive: true,
-  },
-];
-
-const ROLE_OPTIONS: StaffRole[] = ["HOST", "STAFF", "OWNER"];
-const DEFAULT_ROLE: StaffRole = "HOST";
+const ROLE_OPTIONS: StaffRole[] = ["STAFF", "MANAGER"];
+const DEFAULT_ROLE: StaffRole = "STAFF";
 
 const StaffManagment = () => {
   const { selectedBranchId, branches } = useBranchContext();
-  const [staffList, setStaffList] = useState<StaffRecord[]>(FALLBACK_STAFF);
+  const { refreshGoLiveStatus } = useGoLiveContext();
+  const [staffList, setStaffList] = useState<StaffRecord[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<StaffForm | null>(null);
   const [formError, setFormError] = useState("");
   const [formLoading, setFormLoading] = useState(false);
@@ -89,12 +68,12 @@ const StaffManagment = () => {
         return;
       }
       try {
-        const url = `/staff`;
+        const url = selectedBranchId ? `/staff?branchId=${selectedBranchId}` : `/staff`;
         const response = await getJson<StaffRecord[]>(url, {
           headers: apiHeaders,
         });
         if (!mounted) return;
-        setStaffList(response.data ?? FALLBACK_STAFF);
+        setStaffList(response.data ?? []);
       } catch (error) {
         console.error("Unable to load staff list", error);
       } finally {
@@ -105,7 +84,7 @@ const StaffManagment = () => {
     return () => {
       mounted = false;
     };
-  }, [apiHeaders]);
+  }, [apiHeaders, selectedBranchId]);
 
   const formattedList = useMemo(() => staffList, [staffList]);
 
@@ -263,6 +242,7 @@ const StaffManagment = () => {
 
         toast.success("Staff updated successfully!", { id: toastId });
       }
+      refreshGoLiveStatus(); // Refresh onboarding status
       closeForm();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to save staff.";

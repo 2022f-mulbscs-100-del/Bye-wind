@@ -4,9 +4,9 @@ export type Booking = {
   date: string;
   time: string;
   guests: number;
-  status: "confirmed" | "pending";
+  status: "confirmed" | "pending" | "seated" | "completed" | "cancelled" | "no_show";
   table: string;
-  paymentStatus: "paid" | "pay_later";
+  paymentStatus: "paid" | "pay_later" | "pending" | "partial" | "refunded";
   paymentMethod: string;
   amount: number;
   reference: string;
